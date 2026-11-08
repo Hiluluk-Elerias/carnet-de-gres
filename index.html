@@ -38,6 +38,9 @@ svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke
 #preview{position:fixed;z-index:14;left:max(16px,env(safe-area-inset-left,0px));right:80px;bottom:calc(env(safe-area-inset-bottom,0px) + 112px);max-width:400px;padding:9px 12px;background:var(--amber-bg);color:var(--amber);border-radius:10px;font-size:13.5px;box-shadow:var(--shadow)}
 
 .side{position:fixed;z-index:12;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 86px);display:flex;flex-direction:column;gap:8px}
+.seg{display:flex;flex-direction:column;width:48px;border-radius:12px;overflow:hidden;background:var(--surface);box-shadow:var(--shadow)}
+.seg button{height:40px;font-size:13px;font-weight:700}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--on-accent)}
 .nav{position:fixed;z-index:12;left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 26px);display:flex;gap:8px;max-width:400px}
 .nav button{flex:1;min-width:0;height:48px;display:flex;align-items:center;justify-content:center;gap:7px;background:var(--surface);border-radius:12px;box-shadow:var(--shadow);font-family:var(--display);font-weight:500;font-size:15px}
 .credit{position:fixed;z-index:11;left:max(16px,env(safe-area-inset-left,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 5px);font-size:11px;color:#26332c;text-shadow:0 0 3px #fff,0 0 3px #fff}
@@ -106,6 +109,7 @@ textarea{width:100%;height:84px;border:1px solid var(--line);border-radius:8px;b
 <div id="preview" hidden>Aperçu : ni fond de carte, ni photos, ni GPS sur cette page. La version installée les affiche.</div>
 
 <div class="side">
+  <div class="seg" role="group" aria-label="Texte affiché sur la carte"><button id="lb-grade" data-go="label:grade">Cote</button><button id="lb-num" data-go="label:num">N°</button></div>
   <button class="btn-float" id="btn-layer" data-go="layer" aria-label="Changer de fond de carte"><svg class="i" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5zM3 13l9 5 9-5"/></svg></button>
   <button class="btn-float" id="btn-gps" data-go="gps" aria-label="Me localiser"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
 </div>
@@ -172,6 +176,7 @@ const dest=(lat,lon)=>`https://www.google.com/maps/dir/?api=1&destination=${lat}
 /* ---------- Stockage local ---------- */
 const load=(k,d)=>{try{const v=localStorage.getItem('cg-'+k);return v?JSON.parse(v):d}catch{return d}};
 const save=(k,v)=>{try{localStorage.setItem('cg-'+k,JSON.stringify(v))}catch{}};
+let labelMode=load('label','grade');
 let done=load('done',{}),todo=load('todo',{}),dlDone=load('dl',{}),layer=load('layer','plan');
 const F=Object.assign({lv:[],st:[],popular:false,todo:false,done:false,hide:false,sit:false},load('filters',{}));
 function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(()=>t.hidden=true,3500)}
@@ -289,12 +294,14 @@ function draw(){
       ctx.globalAlpha=1;
       if(inC&&z>=16.5){ctx.fillStyle=COL[c.color][2];ctx.font='700 11px system-ui';ctx.fillText(p.num,x,y+.5)}
     }
-    if(z>=18.2&&!circ){
+    if(z>=18.2&&!(circ&&labelMode==='num')){
       ctx.font='700 12px system-ui';ctx.lineWidth=3;ctx.strokeStyle='rgba(255,255,255,.9)';ctx.fillStyle='#17231d';
       const used=[];
-      for(let i=vis.length-1;i>=0;i--){const p=vis[i],x=X(p.x),y=Y(p.y)-r-9;
-        if(x<0||y<0||x>W||y>H||used.some(u=>Math.abs(u[0]-x)<30&&Math.abs(u[1]-y)<15))continue;
-        used.push([x,y]);const g=gradeTxt(p.grade);ctx.strokeText(g,x,y);ctx.fillText(g,x,y);
+      for(let i=vis.length-1;i>=0;i--){const p=vis[i],x=X(p.x),y=Y(p.y)-(circ?10:r)-9;
+        if(circ&&p.circ!==circ)continue;
+        const g=labelMode==='num'?p.num:gradeTxt(p.grade);if(!g)continue;
+        if(x<0||y<0||x>W||y>H||used.some(u=>Math.abs(u[0]-x)<(labelMode==='num'?22:30)&&Math.abs(u[1]-y)<15))continue;
+        used.push([x,y]);ctx.strokeText(g,x,y);ctx.fillText(g,x,y);
       }
     }
   }
@@ -583,6 +590,7 @@ document.addEventListener('click',e=>{
   else if(a==='close')closeAll();
   else if(a==='back')goBack();
   else if(a==='resize'){$('#sheet').classList.toggle('full')}
+  else if(a==='label'){labelMode=b;save('label',b);syncLabel();req();if(V.z<18.2)toast(`Zoome sur un rocher pour voir les ${b==='num'?'numéros':'cotes'}.`);else if(b==='num')toast('Seuls les blocs de circuit ont un numéro.')}
   else if(a==='gps')startGps();
   else if(a==='layer'){layer=layer==='plan'?'ortho':'plan';save('layer',layer);toast('Fond : '+LAYERS[layer][4]);req()}
   else if(a==='done'){if(done[n])delete done[n];else{done[n]=new Date().toISOString().slice(0,10);delete todo[n];save('todo',todo)}save('done',done);applyFilters();refresh()}
@@ -603,7 +611,8 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){const z=document.qu
 
 /* ---------- Démarrage ---------- */
 if(PREVIEW){$('#preview').hidden=false;$('#btn-gps').hidden=true;$('#btn-layer').hidden=true;$('#cr-ign').hidden=true}
-resize();applyFilters();
+function syncLabel(){$('#lb-grade').setAttribute('aria-pressed',labelMode==='grade');$('#lb-num').setAttribute('aria-pressed',labelMode==='num')}
+syncLabel();resize();applyFilters();
 if(!PREVIEW&&'serviceWorker' in navigator&&isSecureContext){
   const had=!!navigator.serviceWorker.controller;
   navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)location.reload()});
