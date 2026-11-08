@@ -207,7 +207,7 @@ function resize(){DPR=Math.min(2.5,devicePixelRatio||1);W=innerWidth;H=innerHeig
 addEventListener('resize',resize);
 function req(){if(!raf)raf=requestAnimationFrame(draw)}
 const tiles=new Map();
-const LAYERS={plan:['GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2','image/png','PM',19,'plan IGN'],relief:['IGNF_LIDAR-HD_MNT_ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW','image/png','PM_0_18',18,'relief LiDAR'],ortho:['ORTHOIMAGERY.ORTHOPHOTOS','image/jpeg','PM',19,'photo aérienne']};
+const LAYERS={plan:['GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2','image/png','PM',19,'plan IGN'],ortho:['ORTHOIMAGERY.ORTHOPHOTOS','image/jpeg','PM',19,'photo aérienne']};
 if(!LAYERS[layer])layer='plan';
 function tileUrl(z,x,y,l=layer){
   const L=LAYERS[l];
@@ -226,7 +226,7 @@ function drawShapes(sc,X,Y){
     ctx.moveTo(x,y);for(let i=1;i<s.xs.length;i++)ctx.lineTo(X(s.xs[i]),Y(s.ys[i]));
     if(s.xs.length>2)ctx.closePath();
   }
-  ctx.lineJoin=ctx.lineCap='round';ctx.globalAlpha=layer==='relief'?.45:.92;
+  ctx.lineJoin=ctx.lineCap='round';ctx.globalAlpha=.92;
   ctx.lineWidth=2*buf+2;ctx.strokeStyle='#7f7359';ctx.stroke();
   ctx.lineWidth=2*buf;ctx.strokeStyle='#cfc4aa';ctx.fillStyle='#cfc4aa';ctx.stroke();ctx.fill();
   ctx.globalAlpha=1;
@@ -500,7 +500,7 @@ const viewAbout=()=>({kind:'about',title:'Infos',html:()=>`
   <p>Carte des blocs de Fontainebleau pour un usage personnel, sans compte ni abonnement.</p>
   <div><h3>Installer sur le téléphone</h3><p class="small">iPhone : dans Safari, Partager puis « Sur l'écran d'accueil ». Android : dans Chrome, menu puis « Installer l'application ».</p></div>
   <div><h3>Sources</h3><p class="small">Données © <a href="https://www.boolder.com" target="_blank" rel="noopener">Boolder</a>, licence <a href="https://creativecommons.org/licenses/by/4.0/deed.fr" target="_blank" rel="noopener">CC BY 4.0</a>, converties pour cette application. Base importée le 8 novembre 2026. Photos servies par Boolder. Fond de carte © IGN. Cette application n'est ni liée à Boolder, ni approuvée par Boolder.</p></div>
-  <div><h3>Forme des rochers</h3><p class="small">Les formes beiges sont estimées à partir de la position des blocs d'un même rocher : ce ne sont pas les contours réels. Le fond « relief LiDAR », accessible avec le bouton des couches, montre le terrain mesuré par l'IGN.</p></div>
+  <div><h3>Forme des rochers</h3><p class="small">Les formes beiges sont estimées à partir de la position des blocs d'un même rocher : ce ne sont pas les contours réels.</p></div>
   <div><h3>Fermetures</h3><p class="small">Les fermetures viennent de la base importée et peuvent dater. Vérifie sur le <a href="https://www.onf.fr/vivre-la-foret/+/2d9a::foret-de-fontainebleau-carte-des-sentiers-et-routes-forestieres-accessibles.html" target="_blank" rel="noopener">site de l'ONF</a> avant de partir.</p></div>`});
 
 /* ---------- Recherche ---------- */
@@ -527,10 +527,11 @@ function setCirc(id){
 async function download(id){
   const a=areas.get(id),btn=$('#dl-btn');
   if(!('caches' in window)){toast('Ce navigateur ne permet pas le mode hors connexion.');return}
+  try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch{}
   const urls=a.tp.map(t=>`https://assets.boolder.com/proxy/topos/${t}`);
   const m=.0006;
   for(let z=13;z<=18;z++){const n=2**z,x0=Math.floor(mx(a.w-m)*n),x1=Math.floor(mx(a.e+m)*n),y0=Math.floor(my(a.n+m)*n),y1=Math.floor(my(a.s-m)*n);
-    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)for(const l of ['plan','relief'])urls.push(tileUrl(z,x,y,l))}
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)urls.push(tileUrl(z,x,y,'plan'))}
   const c=await caches.open('media-v1');let i=0,ok=0,fail=0;
   const label=()=>{const b=$('#dl-btn');if(b)b.textContent=`Téléchargement… ${ok+fail}/${urls.length}`};
   if(btn)btn.disabled=true;label();
@@ -574,7 +575,7 @@ document.addEventListener('click',e=>{
   else if(a==='back')goBack();
   else if(a==='resize'){$('#sheet').classList.toggle('full')}
   else if(a==='gps')startGps();
-  else if(a==='layer'){layer={plan:'relief',relief:'ortho',ortho:'plan'}[layer];save('layer',layer);toast('Fond : '+LAYERS[layer][4]);req()}
+  else if(a==='layer'){layer=layer==='plan'?'ortho':'plan';save('layer',layer);toast('Fond : '+LAYERS[layer][4]);req()}
   else if(a==='done'){if(done[n])delete done[n];else{done[n]=new Date().toISOString().slice(0,10);delete todo[n];save('todo',todo)}save('done',done);applyFilters();refresh()}
   else if(a==='todo'){if(todo[n])delete todo[n];else todo[n]=1;save('todo',todo);applyFilters();refresh()}
   else if(a==='f'){const v=b==='lv'?+c:c,arr=F[b],i=arr.indexOf(v);if(i<0)arr.push(v);else arr.splice(i,1);applyFilters();refresh()}
