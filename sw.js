@@ -1,6 +1,6 @@
-const SHELL='shell-v1',MEDIA='media-v1';
+const SHELL='shell-v2',MEDIA='media-v1';
 const FILES=['./','index.html','manifest.webmanifest','icon-192.png','icon-512.png','apple-touch-icon.png'];
-self.addEventListener('install',e=>e.waitUntil(caches.open(SHELL).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting())));
+self.addEventListener('install',e=>e.waitUntil(caches.open(SHELL).then(c=>c.addAll(FILES.map(f=>new Request(f,{cache:'reload'})))).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(n=>n!==SHELL&&n!==MEDIA).map(n=>caches.delete(n)))).then(()=>self.clients.claim())));
 const isMedia=u=>u.hostname==='assets.boolder.com'||u.hostname==='data.geopf.fr'||u.hostname==='fonts.googleapis.com'||u.hostname==='fonts.gstatic.com';
 self.addEventListener('fetch',e=>{
