@@ -385,7 +385,7 @@ function paint(){
   const v=stack[stack.length-1],s=$('#sheet');
   if(!v){s.hidden=true;selected=null;req();return}
   s.hidden=false;$('#title').textContent=v.title;$('#back').hidden=stack.length<2;
-  $('#body').innerHTML=v.html();$('#body').scrollTop=0;
+  $('#body').innerHTML=v.html();$('#body').scrollTop=0;if(v.after)v.after();
   selected=v.sel||null;req();
 }
 function open(v,o={}){
@@ -396,7 +396,7 @@ function open(v,o={}){
 function goBack(){if(stack.length<2)return closeAll();if(!PREVIEW)history.back();else{stack.pop();paint()}}
 function closeAll(){const n=stack.length;if(!n)return;stack=[];paint();$('#sheet').classList.remove('full');if(!PREVIEW){ignorePop=true;history.go(-n)}}
 if(!PREVIEW)addEventListener('popstate',()=>{if(ignorePop){ignorePop=false;return}if(stack.length){stack.pop();paint()}});
-const refresh=()=>{const v=stack[stack.length-1];if(v){const t=$('#body').scrollTop;$('#body').innerHTML=v.html();$('#body').scrollTop=t}};
+const refresh=()=>{const v=stack[stack.length-1];if(v){const t=$('#body').scrollTop;$('#body').innerHTML=v.html();$('#body').scrollTop=t;if(v.after)v.after()}};
 
 /* ---------- Vues ---------- */
 const areaAlert=a=>a.warn?`<div class="alert ${a.closed?'closed':'note'}">${esc(a.warn)}${a.closed?' <a href="https://www.onf.fr/vivre-la-foret/+/2d9a::foret-de-fontainebleau-carte-des-sentiers-et-routes-forestieres-accessibles.html" target="_blank" rel="noopener">Vérifier sur le site de l\'ONF</a>':''}</div>`:'';
@@ -455,20 +455,20 @@ function openProblem(id,o={}){
 }
 function viewArea(id){
   const a=areas.get(id);
-  return {kind:'area',title:a.name,html(){
+  return {kind:'area',title:a.name,after:()=>dlState(id),html(){
     const max=Math.max(1,...a.levels);
     const TAG={popular:'Populaire',beginner_friendly:'Débutants',family_friendly:'Famille',dry_fast:'Sèche vite'};
     const cs=[...a.circs].map(i=>circuits.get(i)).sort((x,y)=>parseInt(x.avg)-parseInt(y.avg)||x.avg.localeCompare(y.avg));
     const pops=[...problems.values()].filter(p=>p.area===id&&p.feat).sort((x,y)=>y.pop-x.pop).slice(0,8);
-    const stat=dlDone[id];
     return `${areaAlert(a)}
     <div class="row"><span class="chip">${a.count} blocs</span>${clusters.get(a.cl)?`<span class="chip">${esc(clusters.get(a.cl))}</span>`:''}${a.tags.map(t=>`<span class="chip">${TAG[t]||esc(t)}</span>`).join('')}</div>
+    ${PREVIEW?'':`<div><button class="act" style="width:100%" id="dl-btn" data-go="dl:${id}">Télécharger les photos du secteur (${Math.round(a.dl)} Mo)</button><p class="small muted" id="dl-state" style="margin-top:6px">Le plan du secteur est enregistré en même temps. Tu pourras l'utiliser sans connexion.</p></div>`}
     ${a.desc?`<p>${esc(a.desc)}</p>`:''}
     <div><h3>Blocs par niveau</h3><div class="hist">${a.levels.map((n,i)=>`<div><b>${n||''}</b><i style="height:${n/max*62}%"></i><span>${i+1}</span></div>`).join('')}</div></div>
     ${a.access.length?`<div><h3>Accès</h3><div class="list">${a.access.sort((x,y)=>x.min-y.min).map(r=>`<a class="item" style="text-decoration:none;color:inherit" href="${dest(r.poi.lat,r.poi.lon)}" target="_blank" rel="noopener"><span class="t">${esc(r.poi.name)}</span><span class="muted small">${r.min} min ${r.tr==='b'?'à vélo':'à pied'}</span></a>`).join('')}</div></div>`:''}
     ${cs.length?`<div><h3>Circuits</h3><div class="list">${cs.map(c=>`<button class="item" data-go="circ:${c.id}"><span class="dot" style="background:${COL[c.color][0]}"></span><span class="t">${esc(COL[c.color][1])}${c.beg?' <span class="muted small">débutants</span>':''}${c.dang?' <span class="muted small">exposé</span>':''}</span><span class="muted small">${c.list.length} blocs</span><span class="g">${gradeTxt(c.avg)}</span></button>`).join('')}</div></div>`:''}
     ${pops.length?`<div><h3>Blocs populaires</h3><div class="list">${pops.map(pItem).join('')}</div></div>`:''}
-    ${PREVIEW?'':`<div><h3>Hors connexion</h3><button class="act" style="width:100%" id="dl-btn" data-go="dl:${id}">${stat?`Mettre à jour (téléchargé le ${esc(stat)})`:`Télécharger ce secteur (${Math.round(a.dl)} Mo)`}</button></div>`}`}};
+`}};
 }
 function openArea(id){const a=areas.get(id);open(viewArea(id),{replace:true});fit(a.x0,a.x1,a.y0,a.y1)}
 function viewPoi(o){return{kind:'poi',title:o.name,html:()=>`<p class="muted">${o.type==='parking'?'Parking':'Gare'}</p><a class="act" href="${dest(o.lat,o.lon)}" target="_blank" rel="noopener">Itinéraire</a>`}}
@@ -524,6 +524,15 @@ function setCirc(id){
 }
 
 /* ---------- Hors connexion ---------- */
+async function dlState(id){
+  if(PREVIEW||!('caches' in window))return;
+  const a=areas.get(id);let n=0;
+  try{const c=await caches.open('media-v1');const hits=await Promise.all(a.tp.map(t=>c.match(`https://assets.boolder.com/proxy/topos/${t}`)));n=hits.filter(Boolean).length}catch{return}
+  const st=$('#dl-state'),b=$('#dl-btn');if(!st||!b||b.disabled||b.dataset.go!=='dl:'+id)return;
+  if(n===0)return;
+  st.textContent=`${n} / ${a.tp.length} photos enregistrées sur ce téléphone.`;
+  b.textContent=n>=a.tp.length?'Vérifier le téléchargement':'Reprendre le téléchargement';
+}
 async function download(id){
   const a=areas.get(id),btn=$('#dl-btn');
   if(!('caches' in window)){toast('Ce navigateur ne permet pas le mode hors connexion.');return}
@@ -532,17 +541,17 @@ async function download(id){
   const m=.0006;
   for(let z=13;z<=18;z++){const n=2**z,x0=Math.floor(mx(a.w-m)*n),x1=Math.floor(mx(a.e+m)*n),y0=Math.floor(my(a.n+m)*n),y1=Math.floor(my(a.s-m)*n);
     for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)urls.push(tileUrl(z,x,y,'plan'))}
-  const c=await caches.open('media-v1');let i=0,ok=0,fail=0;
+  const c=await caches.open('media-v1');let i=0,ok=0,fail=0,full=false;
   const label=()=>{const b=$('#dl-btn');if(b)b.textContent=`Téléchargement… ${ok+fail}/${urls.length}`};
   if(btn)btn.disabled=true;label();
   await Promise.all(Array.from({length:6},async()=>{
     while(i<urls.length){const u=urls[i++];
       try{if(!await c.match(u)){let r;try{r=await fetch(u,{mode:'cors'})}catch{r=await fetch(u,{mode:'no-cors'})}
-        if(r.ok||r.type==='opaque')await c.put(u,r);else throw 0}ok++}catch{fail++}
+        if(r.ok||r.type==='opaque')await c.put(u,r);else throw 0}ok++}catch(err){fail++;if(err&&err.name==='QuotaExceededError')full=true}
       label()}
   }));
   if(fail===0){dlDone[id]=new Date().toLocaleDateString('fr-FR');save('dl',dlDone);toast('Secteur disponible hors connexion.')}
-  else toast(`${fail} fichiers n'ont pas pu être téléchargés. Réessaie avec une meilleure connexion.`);
+  else toast(full?'Le stockage du téléphone est plein pour cette application.':`${fail} fichiers n'ont pas pu être téléchargés. Relance le téléchargement : ce qui est déjà enregistré est conservé.`);
   if(stack.length&&stack[stack.length-1].kind==='area')refresh();
 }
 
