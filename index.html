@@ -94,6 +94,22 @@ button.chip[aria-pressed="true"]{background:var(--accent);color:var(--on-accent)
 .hist i{display:block;width:100%;background:var(--accent);border-radius:3px 3px 0 0;min-height:1px;margin-block:2px}
 .hist b{font-weight:700}
 textarea{width:100%;height:84px;border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:8px;font-size:13px}
+.alert.ok{background:var(--soft);color:var(--accent);font-weight:700}
+.item .t svg.i{width:16px;height:16px;vertical-align:-3px;margin-left:3px;color:var(--amber)}
+textarea.note{height:96px;font-size:15px}
+.pyr{display:flex;flex-direction:column;gap:3px}
+.pyr div{display:grid;grid-template-columns:38px 1fr 34px;align-items:center;gap:6px;font-size:13px;font-variant-numeric:tabular-nums}
+.pyr div>b{text-align:right}.pyr div>span{text-align:left;color:var(--muted)}
+.pyr p{display:flex;justify-content:center;height:16px}
+.pyr i{display:block;height:100%;background:var(--accent);opacity:.45}.pyr i.f{opacity:1}
+.pyr i:first-child{border-radius:3px 0 0 3px}.pyr i:last-child{border-radius:0 3px 3px 0}.pyr i:only-child{border-radius:3px}
+.wxd{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center;font-size:12px;font-variant-numeric:tabular-nums}
+.wxd div{padding:5px 0;border-radius:8px;background:var(--soft);min-width:0}.wxd div.we{outline:2px solid var(--line)}
+.wxd b{display:block;font-size:13px}
+.kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.kpi div{padding:8px;border-radius:10px;background:var(--soft);text-align:center;font-size:13px;color:var(--muted)}
+.kpi b{display:block;font:700 20px/1.2 var(--display);color:var(--ink)}
+details summary{cursor:pointer;font-size:14px;color:var(--muted);padding-block:6px}
 #toast{position:fixed;z-index:60;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 90px);max-width:calc(100% - 32px);padding:9px 14px;border-radius:10px;background:#17231d;color:#fff;font-size:14px}
 @media (prefers-reduced-motion:reduce){#sheet{transition:none}}
 </style>
@@ -181,6 +197,7 @@ const localDay=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMo
 const frDate=v=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));return m?m[3]+'/'+m[2]+'/'+m[1]:''};
 const save=(k,v)=>{try{localStorage.setItem('cg-'+k,JSON.stringify(v))}catch{}};
 let labelMode=load('label','grade');
+let how=load('how',{}),notes=load('notes',{}),lastBackup=load('lastbk','');
 let done=load('done',{}),todo=load('todo',{}),dlDone=load('dl',{}),layer=load('layer','plan');
 const F=Object.assign({lv:[],st:[],popular:false,todo:false,done:false,hide:false,sit:false},load('filters',{}));
 function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(()=>t.hidden=true,3500)}
@@ -458,7 +475,21 @@ const refresh=()=>{const v=stack[stack.length-1];if(v){const t=$('#body').scroll
 /* ---------- Vues ---------- */
 const areaAlert=a=>a.warn?`<div class="alert ${a.closed?'closed':'note'}">${esc(a.warn)}${a.closed?' <a href="https://www.onf.fr/vivre-la-foret/+/2d9a::foret-de-fontainebleau-carte-des-sentiers-et-routes-forestieres-accessibles.html" target="_blank" rel="noopener">Vérifier sur le site de l\'ONF</a>':''}</div>`:'';
 const icCheck='<svg class="i" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></svg>',icStar='<svg class="i" viewBox="0 0 24 24"><path d="m12 4 2.5 5.2 5.7.8-4.1 4 1 5.7-5.1-2.7-5.1 2.7 1-5.7-4.1-4 5.7-.8z"/></svg>';
-const pItem=(p,x)=>{const c=p.circ&&circuits.get(p.circ);return `<button class="item" data-go="p:${p.id}">${c?`<span class="dot" style="background:${COL[c.color][0]}"></span>`:''}<span class="t">${esc(p.name)} <span class="muted small">${esc(areas.get(p.area).name)}${x?' · '+esc(x):''}</span></span><span class="g">${gradeTxt(p.grade)}</span></button>`};
+/* Type de réussite : v = à vue, f = flash, t = travaillé */
+const icBolt='<svg class="i" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>',icEye='<svg class="i" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',icRedo='<svg class="i" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg>';
+const HOW={v:['À vue',icEye],f:['Flash',icBolt],t:['Travaillé',icRedo]};
+const howIc=id=>how[id]==='f'?icBolt:how[id]==='v'?icEye:'';
+/* Ordre des cotes : 6a < 6a+ < 6b … */
+const gKey=g=>{const m=/^(\d)([abc]?)(\+?)/i.exec(g||'');return m?+m[1]*10+(m[2]?'abc'.indexOf(m[2].toLowerCase())*2:0)+(m[3]?1:0):-1};
+function pyramid(ids){
+  const g=new Map();
+  for(const i of ids){const p=problems.get(i),k=(p.grade||'?').toLowerCase();if(!g.has(k))g.set(k,[0,0]);const e=g.get(k);if(how[i]==='f'||how[i]==='v')e[0]++;else e[1]++}
+  const rows=[...g].sort((a,b)=>gKey(b[0])-gKey(a[0])),max=Math.max(1,...rows.map(r=>r[1][0]+r[1][1]));
+  return `<div class="pyr">${rows.map(([k,[f,w]])=>`<div><b>${gradeTxt(k)}</b><p>${f?`<i class="f" style="width:${f/max*100}%"></i>`:''}${w?`<i style="width:${w/max*100}%"></i>`:''}</p><span>${f+w}</span></div>`).join('')}</div>
+  <p class="small muted" style="margin-top:6px"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--accent)"></span> à vue ou flash &nbsp; <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--accent);opacity:.45"></span> travaillé ou non précisé</p>`;
+}
+const maxGrade=ids=>{let b=null;for(const i of ids){const p=problems.get(i);if(!b||gKey(p.grade)>gKey(b.grade))b=p}return b?gradeTxt(b.grade):'–'};
+const pItem=(p,x)=>{const c=p.circ&&circuits.get(p.circ);return `<button class="item" data-go="p:${p.id}">${c?`<span class="dot" style="background:${COL[c.color][0]}"></span>`:''}<span class="t">${esc(p.name)}${howIc(p.id)} <span class="muted small">${esc(areas.get(p.area).name)}${x?' · '+esc(x):''}</span></span><span class="g">${gradeTxt(p.grade)}</span></button>`};
 function smooth(pts){
   if(pts.length<4)return '';
   let d=`M${pts[0]} ${pts[1]}`;const n=pts.length/2,g=i=>{i=Math.max(0,Math.min(n-1,i));return[pts[2*i],pts[2*i+1]]};
@@ -501,8 +532,10 @@ function viewProblem(id,tIdx=0){
       ${p.bleau?`<a class="act" href="https://bleau.info/a/${encodeURIComponent(p.bleau)}.html" target="_blank" rel="noopener">Fiche Bleau.info</a>`:''}
       <a class="act" href="${dest(p.lat,p.lon)}" target="_blank" rel="noopener">Itinéraire</a>
     </div>
-    ${rel.length?`<div><h3>Variantes</h3><div class="list">${rel.map(pItem).join('')}</div></div>`:''}
-    ${same.length?`<div><h3>Sur cette photo</h3><div class="list">${same.map(pItem).join('')}</div></div>`:''}`}};
+    ${done[id]?`<div><h3>Type de réussite</h3><div class="row">${Object.entries(HOW).map(([k,[l,ic]])=>`<button class="chip" data-go="how:${id}:${k}" aria-pressed="${how[id]===k}">${ic}${l}</button>`).join('')}</div></div>`:''}
+    <div><h3>Mes notes</h3><textarea class="note" id="note" data-id="${id}" placeholder="Méthode, pieds, matériel, nombre d'essais…" aria-label="Mes notes sur ce bloc">${esc(notes[id]||'')}</textarea></div>
+    ${rel.length?`<div><h3>Variantes</h3><div class="list">${rel.map(p=>pItem(p)).join('')}</div></div>`:''}
+    ${same.length?`<div><h3>Sur cette photo</h3><div class="list">${same.map(p=>pItem(p)).join('')}</div></div>`:''}`}};
   return v;
 }
 function openProblem(id,o={}){
@@ -512,19 +545,22 @@ function openProblem(id,o={}){
 }
 function viewArea(id){
   const a=areas.get(id);
-  return {kind:'area',areaId:id,title:a.name,after:()=>{dlState(id);if(NATIVE)pollNative()},html(){
+  return {kind:'area',areaId:id,title:a.name,after:()=>{dlState(id);if(NATIVE)pollNative();loadWx(a)},html(){
+    const mine=Object.keys(done).map(Number).filter(i=>problems.has(i)&&problems.get(i).area===id);
     const max=Math.max(1,...a.levels);
     const TAG={popular:'Populaire',beginner_friendly:'Débutants',family_friendly:'Famille',dry_fast:'Sèche vite'};
     const cs=[...a.circs].map(i=>circuits.get(i)).sort((x,y)=>parseInt(x.avg)-parseInt(y.avg)||x.avg.localeCompare(y.avg));
     const pops=[...problems.values()].filter(p=>p.area===id&&p.feat).sort((x,y)=>y.pop-x.pop).slice(0,8);
     return `${areaAlert(a)}
+    <div id="wx" data-area="${id}"><h3>Grès sec ?</h3><p class="small muted">Chargement de la météo…</p></div>
+    ${mine.length?`<button class="item" data-go="st:${id}" style="background:var(--soft);border-radius:10px;padding-inline:12px"><span class="t"><b>Mes réussites : ${mine.length} / ${a.count}</b> <span class="muted small">max ${maxGrade(mine)}</span></span><span class="muted small">Statistiques ›</span></button>`:''}
     <div class="row"><span class="chip">${a.count} blocs</span>${clusters.get(a.cl)?`<span class="chip">${esc(clusters.get(a.cl))}</span>`:''}${a.tags.map(t=>`<span class="chip">${TAG[t]||esc(t)}</span>`).join('')}</div>
     ${PREVIEW||embedded()?'':`<div><button class="act" style="width:100%" id="dl-btn" data-go="dl:${id}">Télécharger les photos du secteur (${Math.round(a.dl)} Mo)</button><p class="small muted" id="dl-state" style="margin-top:6px">Le plan du secteur est enregistré en même temps. Tu pourras l'utiliser sans connexion.</p></div>`}
     ${a.desc?`<p>${esc(a.desc)}</p>`:''}
     <div><h3>Blocs par niveau</h3><div class="hist">${a.levels.map((n,i)=>`<div><b>${n||''}</b><i style="height:${n/max*62}%"></i><span>${i+1}</span></div>`).join('')}</div></div>
     ${a.access.length?`<div><h3>Accès</h3><div class="list">${a.access.sort((x,y)=>x.min-y.min).map(r=>`<a class="item" style="text-decoration:none;color:inherit" href="${dest(r.poi.lat,r.poi.lon)}" target="_blank" rel="noopener"><span class="t">${esc(r.poi.name)}</span><span class="muted small">${r.min} min ${r.tr==='b'?'à vélo':'à pied'}</span></a>`).join('')}</div></div>`:''}
     ${cs.length?`<div><h3>Circuits</h3><div class="list">${cs.map(c=>`<button class="item" data-go="circ:${c.id}"><span class="dot" style="background:${COL[c.color][0]}"></span><span class="t">${esc(COL[c.color][1])}${c.beg?' <span class="muted small">débutants</span>':''}${c.dang?' <span class="muted small">exposé</span>':''}</span><span class="muted small">${c.list.length} blocs</span><span class="g">${gradeTxt(c.avg)}</span></button>`).join('')}</div></div>`:''}
-    ${pops.length?`<div><h3>Blocs populaires</h3><div class="list">${pops.map(pItem).join('')}</div></div>`:''}
+    ${pops.length?`<div><h3>Blocs populaires</h3><div class="list">${pops.map(p=>pItem(p)).join('')}</div></div>`:''}
 `}};
 }
 function openArea(id){const a=areas.get(id);open(viewArea(id),{replace:true});fit(a.x0,a.x1,a.y0,a.y1)}
@@ -547,14 +583,31 @@ const viewCarnet=()=>({kind:'carnet',title:'Carnet',html(){
   const ds=Object.keys(done).map(Number).filter(i=>problems.has(i)).sort((a,b)=>String(done[b]).localeCompare(String(done[a]))||problems.get(b).lv-problems.get(a).lv);
   const ts=Object.keys(todo).map(Number).filter(i=>problems.has(i));
   const c=Array(8).fill(0);ds.forEach(i=>{const l=problems.get(i).lv;if(l)c[l-1]++});const max=Math.max(1,...c);
-  return `${ds.length?`<div><h3>${ds.length} bloc${ds.length>1?'s':''} réussi${ds.length>1?'s':''}</h3><div class="hist">${c.map((n,i)=>`<div><b>${n||''}</b><i style="height:${n/max*62}%"></i><span>${i+1}</span></div>`).join('')}</div></div>`:'<p class="muted">Touche un bloc sur la carte, puis « Marquer réussi » ou « À faire ». Tes blocs apparaîtront ici.</p>'}
+  const old=lastBackup?Math.round((Date.now()-new Date(lastBackup+'T12:00').getTime())/864e5):null;
+  return `${restoreHtml()}${ds.length?`<div><h3>${ds.length} bloc${ds.length>1?'s':''} réussi${ds.length>1?'s':''} · max ${maxGrade(ds)}</h3><button class="act" style="width:100%" data-go="stats">Statistiques et pyramide des cotes</button></div>`:'<p class="muted">Touche un bloc sur la carte, puis « Marquer réussi » ou « À faire ». Tes blocs apparaîtront ici.</p>'}
   ${ts.length?`<div><h3>À faire</h3><div class="list">${ts.map(i=>pItem(problems.get(i))).join('')}</div></div>`:''}
   ${ds.length?`<div><h3>Réussis</h3><div class="list">${ds.slice(0,200).map(i=>pItem(problems.get(i),frDate(done[i]))).join('')}</div></div>`:''}
-  <div><h3>Sauvegarde</h3><p class="small muted">Ton carnet reste sur ce téléphone. Copie ce texte pour le garder ailleurs, ou colle une sauvegarde pour la restaurer.</p>
-  <textarea id="bk" aria-label="Sauvegarde du carnet">${esc(JSON.stringify({done,todo}))}</textarea>
-  <div class="actions" style="margin-top:8px"><button class="act" data-go="copy">Copier</button><button class="act" data-go="restore">Restaurer</button></div>
+  <div><h3>Sauvegarde</h3><p class="small muted">Ton carnet (réussis, dates, types de réussite, notes, blocs à faire) n'existe que dans cette application : il est perdu si tu la désinstalles. Enregistre un fichier de temps en temps et garde-le ailleurs (Drive, PC…).</p>
+  ${ds.length||ts.length||Object.keys(notes).length?`<p class="alert ${old===null||old>30?'note':'ok'}" style="margin-top:8px;font-weight:400">${old===null?'Aucune sauvegarde en fichier pour l\'instant.':old===0?'Dernière sauvegarde aujourd\'hui.':`Dernière sauvegarde le ${frDate(lastBackup)}${old>30?', il y a plus d\'un mois':''}.`}</p>`:''}
+  <div class="actions" style="margin-top:8px"><button class="act" data-go="bk-save">Enregistrer un fichier</button><label class="act">Restaurer un fichier<input type="file" id="bk-file" accept=".json,application/json" hidden></label></div>
+  <details style="margin-top:6px"><summary>Copier-coller (sans fichier)</summary>
+  <textarea id="bk" aria-label="Sauvegarde du carnet">${esc(JSON.stringify(backupObj()))}</textarea>
+  <div class="actions" style="margin-top:8px"><button class="act" data-go="copy">Copier</button><button class="act" data-go="restore">Restaurer</button></div></details>
   <p class="small muted" style="margin-top:12px">Depuis l'application Boolder : dans ta liste, touche Exporter, puis choisis ce fichier ici. Les blocs réussis et les projets s'ajoutent à ton carnet sans rien effacer.</p>
   <label class="act" style="margin-top:8px">Importer depuis Boolder<input type="file" id="boolder-file" accept=".json,application/json" hidden></label></div>`}});
+/* ---------- Statistiques (tout le carnet, ou un secteur) ---------- */
+const viewStats=(aid=null)=>({kind:'stats',title:aid?areas.get(aid).name:'Statistiques',html(){
+  const ds=Object.keys(done).map(Number).filter(i=>problems.has(i)&&(!aid||problems.get(i).area===aid));
+  if(!ds.length)return '<p class="muted">Pas encore de bloc réussi ici.</p>';
+  const nf=ds.filter(i=>how[i]==='f').length,nv=ds.filter(i=>how[i]==='v').length,days=new Set(ds.map(i=>String(done[i]).slice(0,10))).size;
+  const by=new Map();for(const i of ds){const a=problems.get(i).area;if(!by.has(a))by.set(a,[]);by.get(a).push(i)}
+  const a=aid&&areas.get(aid);
+  const sorted=ds.slice().sort((x,y)=>gKey(problems.get(y).grade)-gKey(problems.get(x).grade)||String(done[y]).localeCompare(String(done[x])));
+  return `<div class="kpi"><div><b>${ds.length}</b>${aid?`sur ${a.count} blocs`:'réussis'}</div><div><b>${maxGrade(ds)}</b>cote max</div><div><b>${days}</b>jour${days>1?'s':''} de grimpe</div>
+    <div><b>${nv}</b>à vue</div><div><b>${nf}</b>flash</div><div><b>${aid?Math.round(ds.length/a.count*100)+' %':by.size}</b>${aid?'du secteur':'secteur'+(by.size>1?'s':'')}</div></div>
+  <div><h3>Pyramide des cotes</h3>${pyramid(ds)}</div>
+  ${aid?`<div><h3>Mes réussis ici</h3><div class="list">${sorted.map(i=>pItem(problems.get(i),frDate(done[i]))).join('')}</div></div>`
+  :`<div><h3>Par secteur</h3><div class="list">${[...by].sort((x,y)=>y[1].length-x[1].length).map(([k,l])=>`<button class="item" data-go="st:${k}"><span class="t">${esc(areas.get(k).name)} <span class="muted small">max ${maxGrade(l)}${l.filter(i=>how[i]==='f'||how[i]==='v').length?` · ${l.filter(i=>how[i]==='f'||how[i]==='v').length} à vue/flash`:''}</span></span><span class="g">${l.length}</span></button>`).join('')}</div></div>`}`}});
 const viewAbout=()=>({kind:'about',title:'Infos',after:()=>NATIVE&&pollNative(),html:()=>`
   <p>Carte des blocs de Fontainebleau pour un usage personnel, sans compte ni abonnement.</p>
   ${NATIVE?offlineHtml():''}
@@ -563,8 +616,72 @@ const viewAbout=()=>({kind:'about',title:'Infos',after:()=>NATIVE&&pollNative(),
   :`<p class="small">Sans fichier, les formes beiges sont estimées à partir de la position des blocs : ce ne sont pas les contours réels. Importe un fichier de formes de rochers pour avoir les vrais contours.</p>
   <label class="act" style="margin-top:8px">Importer un fichier<input type="file" id="rk-file" accept=".json,application/json" hidden></label>`}</div>
   <div${NATIVE?' hidden':''}><h3>Installer sur le téléphone</h3><p class="small">iPhone : dans Safari, Partager puis « Sur l'écran d'accueil ». Android : dans Chrome, menu puis « Installer l'application ».</p></div>
-  <div><h3>Sources</h3><p class="small">Données © <a href="https://www.boolder.com" target="_blank" rel="noopener">Boolder</a>, licence <a href="https://creativecommons.org/licenses/by/4.0/deed.fr" target="_blank" rel="noopener">CC BY 4.0</a>, converties pour cette application. Base importée le 8 novembre 2026. Photos © Boolder. Fond de carte © IGN. Cette application n'est ni liée à Boolder, ni approuvée par Boolder.</p></div>
+  <div><h3>Sources</h3><p class="small">Données © <a href="https://www.boolder.com" target="_blank" rel="noopener">Boolder</a>, licence <a href="https://creativecommons.org/licenses/by/4.0/deed.fr" target="_blank" rel="noopener">CC BY 4.0</a>, converties pour cette application. Base importée le 8 novembre 2026. Photos © Boolder. Fond de carte © IGN. Météo : <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo.com</a> (CC BY 4.0). Cette application n'est ni liée à Boolder, ni approuvée par Boolder.</p></div>
   <div><h3>Fermetures</h3><p class="small">Les fermetures viennent de la base importée et peuvent dater. Vérifie sur le <a href="https://www.onf.fr/vivre-la-foret/+/2d9a::foret-de-fontainebleau-carte-des-sentiers-et-routes-forestieres-accessibles.html" target="_blank" rel="noopener">site de l'ONF</a> avant de partir.</p></div>`});
+
+/* ---------- Sauvegarde en fichier ---------- */
+const backupObj=()=>({type:'carnet-de-gres-sauvegarde',version:2,date:localDay(),done,todo,how,notes});
+let pendingRestore=null;
+function parseBackup(o){
+  if(!o||typeof o!=='object')return null;
+  if(Array.isArray(o.ticks))return 'boolder';
+  if(typeof o.done!=='object'||typeof o.todo!=='object'||!o.done||!o.todo)return null;
+  const obj=v=>v&&typeof v==='object'&&!Array.isArray(v)?v:{};
+  return{done:obj(o.done),todo:obj(o.todo),how:obj(o.how),notes:obj(o.notes),date:typeof o.date==='string'?o.date:''};
+}
+function applyRestore(b){done=b.done;todo=b.todo;how=b.how;notes=b.notes;save('done',done);save('todo',todo);save('how',how);save('notes',notes);applyFilters();refresh();toast('Carnet restauré.')}
+function backupSave(){
+  const txt=JSON.stringify(backupObj()),name=`carnet-de-gres-${localDay()}.json`;
+  if(NATIVE&&window.Native.saveFile){window.Native.saveFile(name,txt);return}
+  const l=document.createElement('a');l.href=URL.createObjectURL(new Blob([txt],{type:'application/json'}));l.download=name;document.body.append(l);l.click();
+  setTimeout(()=>{URL.revokeObjectURL(l.href);l.remove()},2000);backupDone();
+}
+function backupDone(){lastBackup=localDay();save('lastbk',lastBackup);toast('Sauvegarde enregistrée.');refresh()}
+window.onNativeSaved=r=>{if(r==='ok')backupDone();else if(r==='erreur')toast('La sauvegarde n\'a pas pu être écrite.')};
+function restoreFile(file){
+  file.text().then(t=>{const b=parseBackup(JSON.parse(t));if(b==='boolder'){toast('C\'est un export Boolder : utilise « Importer depuis Boolder ».');return}if(!b)throw 0;
+    pendingRestore=b;refresh();$('#body').scrollTop=0}).catch(()=>toast('Ce fichier n\'est pas une sauvegarde du carnet.'))}
+function restoreHtml(){
+  const b=pendingRestore;if(!b)return '';
+  const n=k=>Object.keys(b[k]).length,cur=Object.keys(done).length;
+  return `<div class="alert note"><b>Restaurer la sauvegarde${b.date?' du '+frDate(b.date):''} ?</b><br>Elle contient ${n('done')} réussi${n('done')>1?'s':''}, ${n('todo')} à faire et ${n('notes')} note${n('notes')>1?'s':''}. Elle remplacera ton carnet actuel (${cur} réussi${cur>1?'s':''}).
+  <div class="actions" style="margin-top:8px"><button class="act" data-go="bk-yes" style="background:var(--accent);color:var(--on-accent)">Remplacer</button><button class="act" data-go="bk-no">Annuler</button></div></div>`;
+}
+
+/* ---------- Météo : le grès est-il sec ? (Open-Meteo, sans clé) ---------- */
+const wxCache=new Map();
+const DAYS=['Dim.','Lun.','Mar.','Mer.','Jeu.','Ven.','Sam.'];
+async function loadWx(a){
+  const box=()=>{const b=$('#wx');return b&&+b.dataset.area===a.id?b:null};
+  const lat=((a.s+a.n)/2).toFixed(2),lon=((a.w+a.e)/2).toFixed(2),k=lat+','+lon;let d=wxCache.get(k);
+  try{
+    if(!d||Date.now()-d.t>30*60e3){
+      const r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=precipitation,relative_humidity_2m&daily=precipitation_sum,precipitation_probability_max&past_days=3&forecast_days=7&timezone=Europe%2FParis`);
+      if(!r.ok)throw 0;d={t:Date.now(),j:await r.json()};wxCache.set(k,d);
+    }
+    const b=box();if(b)b.innerHTML=wxHtml(d.j,a);
+  }catch{const b=box();if(b)b.innerHTML='<h3>Grès sec ?</h3><p class="small muted">Météo indisponible pour le moment (pas de connexion ?).</p>'}
+}
+function wxHtml(j,a){
+  const h=j.hourly,t=h.time,pr=h.precipitation,rh=h.relative_humidity_2m,d=new Date();
+  const now=localDay()+'T'+String(d.getHours()).padStart(2,'0')+':00';
+  let i=t.indexOf(now);if(i<0){i=0;while(i<t.length-1&&t[i+1]<=now)i++}
+  const sum=(x,y)=>{let s=0;for(let k=Math.max(0,x);k<=Math.min(y,pr.length-1);k++)s+=pr[k]||0;return s};
+  const r24=sum(i-23,i),r48=sum(i-47,i);
+  let since=-1;for(let k=i;k>=0;k--)if((pr[k]||0)>=.2){since=i-k;break}
+  const hum=rh[i],fast=a.tags.includes('dry_fast'),mm=v=>v.toLocaleString('fr-FR',{maximumFractionDigits:1})+' mm';
+  let cls,head,txt;
+  if((pr[i]||0)>=.2||r24>=1){cls='closed';head='Mouillé';txt=`${mm(r24)} de pluie ces dernières 24 h. Le grès mouillé est fragile : les prises cassent et s'usent. Mieux vaut attendre qu'il sèche.`}
+  else if(r48>=2||r24>=.2||(hum>=90&&since>=0&&since<72)){cls='note';head='Peut-être encore humide';txt=`${mm(r48)} de pluie en 48 h, humidité de l'air ${hum} %.${fast?' Ce secteur sèche vite.':' Touche le grès avant de grimper.'}`}
+  else{cls='ok';head='Probablement sec';txt=`${mm(r48)} de pluie en 48 h, humidité de l'air ${hum} %.`}
+  const last=since<0?'Pas de pluie depuis au moins 3 jours.':since===0?'Il pleut en ce moment.':since<24?`Dernière pluie il y a ${since} h.`:`Dernière pluie il y a ${Math.floor(since/24)} jour${since>=48?'s':''}.`;
+  const dd=j.daily,today=localDay(),days=[];
+  for(let k=0;k<dd.time.length&&days.length<7;k++)if(dd.time[k]>=today)days.push(k);
+  return `<h3>Grès sec ?</h3><div class="alert ${cls}"><b>${head}</b><br><span style="font-weight:400">${txt} ${last}</span></div>
+  <p class="small muted" style="margin:10px 0 6px">Pluie prévue (et probabilité)</p>
+  <div class="wxd">${days.map(k=>{const x=new Date(dd.time[k]+'T12:00'),w=x.getDay();return `<div class="${w===0||w===6?'we':''}"><span>${dd.time[k]===today?'Auj.':DAYS[w]}</span><b>${Math.round(dd.precipitation_sum[k]||0)}</b><span>${dd.precipitation_probability_max[k]??'–'} %</span></div>`}).join('')}</div>
+  <p class="small muted" style="margin-top:6px">En mm par jour. Estimation météo (Open-Meteo) : les secteurs en sous-bois ou sablonneux sèchent plus lentement.</p>`;
+}
 
 /* ---------- Recherche ---------- */
 const qi=$('#q'),res=$('#results');
@@ -573,7 +690,7 @@ qi.addEventListener('input',()=>{
   if(k.length<2){res.hidden=true;return}
   const as=[...areas.values()].filter(a=>norm(a.name).includes(k)).slice(0,6);
   const ps=[];for(let i=P_ORDER.length-1;i>=0&&ps.length<40;i--)if(P_ORDER[i].key.includes(k))ps.push(P_ORDER[i]);
-  res.innerHTML=as.map(a=>`<button class="item" data-go="a:${a.id}"><span class="t"><b>${esc(a.name)}</b> <span class="muted small">secteur</span></span>${a.closed?'<span class="chip" style="background:var(--rust-bg);color:var(--rust)">Fermé</span>':''}</button>`).join('')+ps.map(pItem).join('')||'<p class="item muted">Aucun résultat</p>';
+  res.innerHTML=as.map(a=>`<button class="item" data-go="a:${a.id}"><span class="t"><b>${esc(a.name)}</b> <span class="muted small">secteur</span></span>${a.closed?'<span class="chip" style="background:var(--rust-bg);color:var(--rust)">Fermé</span>':''}</button>`).join('')+ps.map(p=>pItem(p)).join('')||'<p class="item muted">Aucun résultat</p>';
   res.hidden=false;
 });
 
@@ -707,7 +824,13 @@ document.addEventListener('click',e=>{
   else if(a==='label'){labelMode=b;save('label',b);syncLabel();req();if(V.z<18.2)toast(`Zoome sur un rocher pour voir les ${b==='num'?'numéros':'cotes'}.`);else if(b==='num')toast('Seuls les blocs de circuit ont un numéro.')}
   else if(a==='gps')startGps();
   else if(a==='layer'){layer=layer==='plan'?'ortho':'plan';save('layer',layer);toast('Fond : '+LAYERS[layer][4]);req()}
-  else if(a==='done'){if(done[n])delete done[n];else{done[n]=localDay();delete todo[n];save('todo',todo)}save('done',done);applyFilters();refresh()}
+  else if(a==='done'){if(done[n]){delete done[n];delete how[n];save('how',how)}else{done[n]=localDay();delete todo[n];save('todo',todo)}save('done',done);applyFilters();refresh()}
+  else if(a==='how'){if(how[n]===c)delete how[n];else how[n]=c;save('how',how);refresh()}
+  else if(a==='stats')open(viewStats());
+  else if(a==='st')open(viewStats(n));
+  else if(a==='bk-save')backupSave();
+  else if(a==='bk-yes'){const b=pendingRestore;pendingRestore=null;if(b)applyRestore(b)}
+  else if(a==='bk-no'){pendingRestore=null;refresh()}
   else if(a==='todo'){if(todo[n])delete todo[n];else todo[n]=1;save('todo',todo);applyFilters();refresh()}
   else if(a==='f'){const v=b==='lv'?+c:c,arr=F[b],i=arr.indexOf(v);if(i<0)arr.push(v);else arr.splice(i,1);applyFilters();refresh()}
   else if(a==='b'){F[b]=!F[b];if(b==='done'&&F.done)F.hide=false;if(b==='hide'&&F.hide)F.done=false;applyFilters();refresh()}
@@ -722,10 +845,12 @@ document.addEventListener('click',e=>{
   else if(a==='nat-ortho')nativeStart(allTiles('ortho'),'Photo aérienne');
   else if(a==='nat-stop'){window.Native.stop();toast('Téléchargement arrêté. Ce qui est enregistré est conservé.');setTimeout(pollNative,600)}
   else if(a==='copy'){const t=$('#bk');Promise.resolve().then(()=>navigator.clipboard.writeText(t.value)).then(()=>toast('Sauvegarde copiée.')).catch(()=>{t.select();toast('Sélectionne le texte et copie-le.')})}
-  else if(a==='restore'){try{const o=JSON.parse($('#bk').value);if(typeof o.done!=='object'||typeof o.todo!=='object')throw 0;done=o.done;todo=o.todo;save('done',done);save('todo',todo);applyFilters();refresh();toast('Carnet restauré.')}catch{toast('Ce texte n\'est pas une sauvegarde valide.')}}
+  else if(a==='restore'){try{const b=parseBackup(JSON.parse($('#bk').value));if(!b||b==='boolder')throw 0;pendingRestore=b;refresh();$('#body').scrollTop=0}catch{toast('Ce texte n\'est pas une sauvegarde valide.')}}
 });
 document.addEventListener('change',e=>{if(e.target.id==='rk-file'&&e.target.files[0])rocksImport(e.target.files[0]);
-  if(e.target.id==='boolder-file'&&e.target.files[0]){boolderImport(e.target.files[0]);e.target.value=''}});
+  if(e.target.id==='boolder-file'&&e.target.files[0]){boolderImport(e.target.files[0]);e.target.value=''}
+  if(e.target.id==='bk-file'&&e.target.files[0]){restoreFile(e.target.files[0]);e.target.value=''}});
+document.addEventListener('input',e=>{if(e.target.id==='note'){const i=+e.target.dataset.id,v=e.target.value;if(v.trim())notes[i]=v;else delete notes[i];save('notes',notes)}});
 document.addEventListener('error',e=>{if(e.target.matches&&e.target.matches('.topo img'))e.target.closest('.topo').classList.add('off')},true);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){const z=document.querySelector('.topo.zoom');if(z)z.classList.remove('zoom');else if(!$('#results').hidden)$('#results').hidden=true;else closeAll()}});
 

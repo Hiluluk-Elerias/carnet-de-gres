@@ -72,6 +72,12 @@ final class Bridge {
         }
     }
 
+    /** Enregistre un fichier texte là où l'utilisateur le choisit ; le résultat revient par window.onNativeSaved. */
+    @JavascriptInterface
+    public void saveFile(String name, String content) {
+        activity.runOnUiThread(() -> activity.saveFile(name, content));
+    }
+
     @JavascriptInterface
     public void stop() {
         DownloadService.requestStop();

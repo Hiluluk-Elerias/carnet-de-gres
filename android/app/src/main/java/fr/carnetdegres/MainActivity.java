@@ -17,10 +17,15 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+
 public class MainActivity extends Activity {
     private static final int REQ_GEO = 1;
     private static final int REQ_NOTIF = 2;
     private static final int REQ_FILE = 3;
+    private static final int REQ_SAVE = 4;
+    private String pendingSave;
     private ValueCallback<Uri[]> fileCallback;
     private WebView web;
     private GeolocationPermissions.Callback geoCallback;
@@ -100,6 +105,35 @@ public class MainActivity extends Activity {
                 || checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
     }
 
+    /** Fenêtre Android « Enregistrer sous » (aucune autorisation nécessaire). */
+    void saveFile(String name, String content) {
+        pendingSave = content;
+        Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("application/json");
+        i.putExtra(Intent.EXTRA_TITLE, name);
+        try {
+            startActivityForResult(i, REQ_SAVE);
+        } catch (ActivityNotFoundException e) {
+            pendingSave = null;
+            notifySaved("erreur");
+        }
+    }
+
+    private void notifySaved(String r) {
+        web.evaluateJavascript("window.onNativeSaved&&window.onNativeSaved('" + r + "')", null);
+    }
+
+    private boolean write(Uri u, String mode, byte[] b) {
+        try (OutputStream o = getContentResolver().openOutputStream(u, mode)) {
+            if (o == null) return false;
+            o.write(b);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     void askNotifications() {
         if (Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -117,6 +151,16 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onActivityResult(int code, int result, Intent data) {
+        if (code == REQ_SAVE) {
+            String r = "annule";
+            if (result == RESULT_OK && data != null && data.getData() != null && pendingSave != null) {
+                byte[] b = pendingSave.getBytes(StandardCharsets.UTF_8);
+                r = write(data.getData(), "wt", b) || write(data.getData(), "w", b) ? "ok" : "erreur";
+            }
+            pendingSave = null;
+            notifySaved(r);
+            return;
+        }
         if (code == REQ_FILE && fileCallback != null) {
             Uri u = (result == RESULT_OK && data != null) ? data.getData() : null;
             fileCallback.onReceiveValue(u != null ? new Uri[]{u} : null);
