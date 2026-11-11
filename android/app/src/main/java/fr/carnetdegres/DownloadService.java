@@ -118,7 +118,7 @@ public class DownloadService extends Service {
                 failed.incrementAndGet();
                 continue;
             }
-            if (f.exists() && f.length() > 0) {
+            if (Pack.available(this, t)) {
                 done.incrementAndGet();
                 continue;
             }

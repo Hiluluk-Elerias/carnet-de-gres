@@ -14,6 +14,8 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -77,6 +79,34 @@ final class Pack {
         return new File(root(c), "fond/" + p[1] + "/" + p[2] + "/" + p[3] + "/" + p[4] + ext);
     }
 
+    private static Set<String> embedded;
+
+    /** Photos intégrées à l'APK (dossier assets/photos), lues une seule fois. */
+    static synchronized Set<String> embedded(Context c) {
+        if (embedded == null) {
+            embedded = new HashSet<>();
+            try {
+                String[] l = c.getAssets().list("photos");
+                if (l != null) for (String n : l) embedded.add(n);
+            } catch (Exception ignored) {
+            }
+        }
+        return embedded;
+    }
+
+    private static String embeddedName(Context c, String t) {
+        if (t == null || !t.startsWith("p/")) return null;
+        String n = t.substring(2) + ".jpg";
+        return embedded(c).contains(n) ? n : null;
+    }
+
+    /** Vrai si le fichier est déjà disponible sans réseau (intégré à l'APK ou téléchargé). */
+    static boolean available(Context c, String t) {
+        if (embeddedName(c, t) != null) return true;
+        File f = fileForToken(c, t);
+        return f != null && f.exists() && f.length() > 0;
+    }
+
     static String mime(String name) {
         String n = name.toLowerCase();
         if (n.endsWith(".html")) return "text/html";
@@ -119,6 +149,13 @@ final class Pack {
         }
         String token = tokenForUrl(u);
         if (token == null) return null;
+        String emb = embeddedName(c, token);
+        if (emb != null) {
+            try {
+                return ok("image/jpeg", c.getAssets().open("photos/" + emb));
+            } catch (Exception ignored) {
+            }
+        }
         File f = fileForToken(c, token);
         if (f == null) return notFound();
         try {

@@ -2,7 +2,7 @@ plugins {
     id 'com.android.application'
 }
 
-def runNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
+def runNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger() + (System.getenv('VERSION_OFFSET') ?: '0').toInteger()
 
 android {
     namespace 'fr.carnetdegres'

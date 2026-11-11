@@ -229,6 +229,7 @@ const decodeRing=a=>{
 const shapes=(D.B||[]).map(decodeRing);
 /* Formes réelles des rochers : fichier importé par l'utilisateur, gardé dans le téléphone */
 let rocks=[];
+const BUILTIN_ROCKS=null;/*ROCHERS*/
 const M1=1/(40075016*Math.cos(48.4*Math.PI/180));
 function setRocks(list){
   rocks=(list||[]).map(decodeRing);
@@ -244,13 +245,13 @@ function setRocks(list){
 }
 function kv(mode,fn){return new Promise((ok,ko)=>{const o=indexedDB.open('carnet',1);o.onupgradeneeded=()=>o.result.createObjectStore('kv');
   o.onerror=()=>ko(o.error);o.onsuccess=()=>{const t=o.result.transaction('kv',mode),r=fn(t.objectStore('kv'));t.oncomplete=()=>ok(r&&r.result);t.onerror=()=>ko(t.error)}})}
-const rocksLoad=()=>kv('readonly',st=>st.get('rochers')).then(v=>{if(v&&v.R)setRocks(v.R)}).catch(()=>{});
+const rocksLoad=()=>{if(BUILTIN_ROCKS)setRocks(BUILTIN_ROCKS);return kv('readonly',st=>st.get('rochers')).then(v=>{if(v&&v.R)setRocks(v.R)}).catch(()=>{})};
 function rocksImport(file){
   file.text().then(t=>{const o=JSON.parse(t);if(o.type!=='carnet-de-gres-rochers'||!Array.isArray(o.R))throw 0;
     return kv('readwrite',st=>st.put(o,'rochers')).then(()=>{setRocks(o.R);toast(o.R.length+' formes de rochers importées.');refresh()})})
   .catch(()=>toast('Ce fichier ne contient pas de formes de rochers.'))
 }
-function rocksRemove(){kv('readwrite',st=>st.delete('rochers')).then(()=>{setRocks([]);toast('Formes des rochers retirées.');refresh()})}
+function rocksRemove(){kv('readwrite',st=>st.delete('rochers')).then(()=>{setRocks(BUILTIN_ROCKS||[]);toast('Formes des rochers retirées.');refresh()})}
 function drawShapes(sc,X,Y){
   const mpp=40075016*Math.cos(48.4*Math.PI/180)/sc,buf=Math.max(1.5,2.4/mpp),pad=80+buf;
   ctx.beginPath();
@@ -543,7 +544,7 @@ const viewCarnet=()=>({kind:'carnet',title:'Carnet',html(){
 const viewAbout=()=>({kind:'about',title:'Infos',after:()=>NATIVE&&pollNative(),html:()=>`
   <p>Carte des blocs de Fontainebleau pour un usage personnel, sans compte ni abonnement.</p>
   ${NATIVE?offlineHtml():''}
-  <div><h3>Formes des rochers</h3>${rocks.length?`<p class="small">${rocks.length} formes importées. Elles remplacent les contours estimés là où elles existent.</p>
+  <div><h3>Formes des rochers</h3>${rocks.length?`<p class="small">${rocks.length} formes de rochers chargées. Elles remplacent les contours estimés là où elles existent.</p>
   <div class="actions" style="margin-top:8px"><label class="act" style="text-align:center">Remplacer<input type="file" id="rk-file" accept=".json,application/json" hidden></label><button class="act" data-go="rk-off">Retirer</button></div>`
   :`<p class="small">Sans fichier, les formes beiges sont estimées à partir de la position des blocs : ce ne sont pas les contours réels. Importe un fichier de formes de rochers pour avoir les vrais contours.</p>
   <label class="act" style="margin-top:8px">Importer un fichier<input type="file" id="rk-file" accept=".json,application/json" hidden></label>`}</div>

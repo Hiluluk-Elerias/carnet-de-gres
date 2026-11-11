@@ -35,8 +35,7 @@ final class Bridge {
             JSONArray a = new JSONArray(tokens);
             int n = 0;
             for (int i = 0; i < a.length(); i++) {
-                File f = Pack.fileForToken(activity, a.getString(i));
-                if (f != null && f.exists() && f.length() > 0) n++;
+                if (Pack.available(activity, a.getString(i))) n++;
             }
             return n;
         } catch (Exception e) {
@@ -51,8 +50,7 @@ final class Bridge {
             List<String> list = new ArrayList<>(a.length());
             for (int i = 0; i < a.length(); i++) {
                 String t = a.getString(i);
-                File f = Pack.fileForToken(activity, t);
-                if (f != null && !(f.exists() && f.length() > 0)) list.add(t);
+                if (Pack.fileForToken(activity, t) != null && !Pack.available(activity, t)) list.add(t);
             }
             if (list.isEmpty()) return "complet";
             DownloadService.add(list, label);
