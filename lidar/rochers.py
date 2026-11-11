@@ -80,9 +80,64 @@ def detecte(seuil, rayon):
     return garde, h
 
 
-resultats = {}
-for seuil, rayon in [(0.8, 8), (1.2, 8), (1.2, 12)]:
-    m, h = detecte(seuil, rayon)
+# ---- Nuage de points : points non végétation au-dessus du sol ----
+import laspy
+
+def trouve_dalles():
+    urls = set()
+    for typ in ['IGNF_LIDAR-HD_TA:nuage-dalle', 'IGNF_LIDAR-HD_METADONNEE:metadata']:
+        q = {'SERVICE': 'WFS', 'VERSION': '2.0.0', 'REQUEST': 'GetFeature', 'TYPENAMES': typ,
+             'OUTPUTFORMAT': 'application/json', 'SRSNAME': 'EPSG:2154',
+             'BBOX': f'{x0},{y0},{x1},{y1},EPSG:2154'}
+        u = 'https://data.geopf.fr/wfs/ows?' + urllib.parse.urlencode(q)
+        try:
+            fc = json.load(urllib.request.urlopen(urllib.request.Request(u, headers={'User-Agent': 'CarnetDeGres/1.0'}), timeout=60))
+        except Exception as ex:
+            print('WFS', typ, 'échec', ex)
+            continue
+        for f in fc.get('features', []):
+            for k, v in f['properties'].items():
+                if isinstance(v, str) and v.endswith('.laz'):
+                    urls.add(v)
+        print('WFS', typ, len(fc.get('features', [])), 'éléments', sorted(urls)[:4])
+    return sorted(urls)
+
+dalles = trouve_dalles()
+X, Y, Z, C = [], [], [], []
+for u in dalles:
+    try:
+        with laspy.CopcReader.open(u) as r:
+            pts_ = r.query(bounds=laspy.copc.Bounds(mins=np.array([x0, y0]), maxs=np.array([x1, y1])))
+    except Exception as ex:
+        print('COPC', u, 'échec', ex)
+        continue
+    X.append(np.asarray(pts_.x)); Y.append(np.asarray(pts_.y)); Z.append(np.asarray(pts_.z)); C.append(np.asarray(pts_.classification))
+    print('COPC', u, len(pts_.x), 'points')
+pm = np.zeros(z.shape, bool)
+if X:
+    X, Y, Z, C = map(np.concatenate, (X, Y, Z, C))
+    col = ((X - x0) / RES).astype(int); row = ((y1 - Y) / RES).astype(int)
+    ok = (col >= 0) & (col < W) & (row >= 0) & (row < H)
+    X, Y, Z, C, col, row = X[ok], Y[ok], Z[ok], C[ok], col[ok], row[ok]
+    hz = Z - z[row, col]
+    print('points', len(Z), 'densité', round(len(Z) / ((x1 - x0) * (y1 - y0)), 1), 'pts/m²')
+    for lo, hi in [(-1, .3), (.3, .8), (.8, 2), (2, 5), (5, 40)]:
+        sel = (hz >= lo) & (hz < hi)
+        u_, n_ = np.unique(C[sel], return_counts=True)
+        print(f'  hauteur {lo}..{hi} m :', dict(zip(u_.tolist(), n_.tolist())))
+    cand = (hz > 0.7) & (hz < 7) & ~np.isin(C, [3, 4, 5])
+    cnt = np.zeros(z.shape, np.int32)
+    np.add.at(cnt, (row[cand], col[cand]), 1)
+    pm = cnt >= 2
+    pm = ndimage.binary_closing(pm, structure=disque(0.6))
+    pm = ndimage.binary_opening(pm, structure=disque(0.5))
+    pm = ndimage.binary_fill_holes(pm)
+    lab, nb = ndimage.label(pm)
+    t_ = ndimage.sum(pm, lab, range(1, nb + 1))
+    pm = np.isin(lab, 1 + np.nonzero(t_ * RES * RES >= 3)[0])
+
+
+def polygones(m, h):
     polys = []
     for geom, v in shapes(m.astype('uint8'), mask=m, transform=tr):
         p = shape(geom).simplify(0.35, preserve_topology=True)
@@ -92,9 +147,17 @@ for seuil, rayon in [(0.8, 8), (1.2, 8), (1.2, 12)]:
         g = shp_transform(lambda x, y, zz=None: to84.transform(x, y), p)
         polys.append({'type': 'Feature', 'properties': {'surface_m2': round(p.area, 1), 'hauteur_max_m': round(hmax, 1)},
                       'geometry': mapping(g)})
-    cle = f's{seuil}_r{rayon}'
+    return polys
+
+
+resultats = {}
+mm, h = detecte(1.0, 10)
+for cle, m in [('MNT seul', mm), ('points seuls', pm), ('combiné', mm | pm)]:
+    if cle != 'MNT seul':
+        m = ndimage.binary_closing(m, structure=disque(0.5))
+    polys = polygones(m, h)
     json.dump({'type': 'FeatureCollection', 'features': polys},
-              open(os.path.join(OUT, f'rochers_{cle}.geojson'), 'w'))
+              open(os.path.join(OUT, 'rochers_' + cle.replace(' ', '_').replace('é', 'e') + '.geojson'), 'w'))
     resultats[cle] = (m, h, polys)
     print(cle, len(polys), 'rochers')
 

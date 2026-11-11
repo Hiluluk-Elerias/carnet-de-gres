@@ -24,7 +24,7 @@ jobs:
           set -o pipefail
           mkdir -p sortie
           {
-            pip install -q numpy scipy rasterio pyproj shapely matplotlib
+            pip install -q numpy scipy rasterio pyproj shapely matplotlib "laspy[lazrs]" requests
             python lidar/rochers.py "$(cat lidar/secteur.txt)" sortie
           } 2>&1 | tee sortie/journal.txt
 
