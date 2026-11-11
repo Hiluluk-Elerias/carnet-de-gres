@@ -1,0 +1,46 @@
+name: Rochers LiDAR
+
+on:
+  push:
+    branches: [main]
+    paths: ['lidar/**', '.github/workflows/lidar.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  rochers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Calculer les contours
+        run: |
+          set -o pipefail
+          mkdir -p sortie
+          {
+            pip install -q numpy scipy rasterio pyproj shapely matplotlib "laspy[lazrs]" requests
+            python lidar/rochers.py "$(cat lidar/secteur.txt)" sortie
+          } 2>&1 | tee sortie/journal.txt
+
+      - name: Enregistrer le résultat
+        if: always()
+        run: |
+          mkdir -p sortie
+          echo "Résultat : ${{ job.status }} (run ${{ github.run_number }}, ${GITHUB_SHA::7})" > sortie/resultat.txt
+          rm -f sortie/mnt.npy
+          cp -r sortie /tmp/sortie
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git checkout --orphan lidar-result
+          git rm -rfq --cached .
+          rm -rf ./*
+          cp -r /tmp/sortie/. .
+          git add -A
+          git commit -qm "Rochers LiDAR ${{ github.run_number }}"
+          git push -f origin lidar-result
