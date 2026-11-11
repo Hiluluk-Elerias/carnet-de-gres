@@ -742,7 +742,7 @@ function jobHtml(st){
   <div style="height:8px;border-radius:4px;background:var(--soft);overflow:hidden;margin-top:6px"><div style="height:100%;width:${pc}%;background:var(--accent)"></div></div>
   ${st.running?'<button class="act" style="width:100%;margin-top:8px" data-go="nat-stop">Arrêter</button>':st.failed?'<p class="small muted" style="margin-top:6px">Relance le même bouton pour réessayer les fichiers manquants.</p>':''}`;
 }
-function embedded(){try{return NATIVE&&window.Native.embeddedPhotos?window.Native.embeddedPhotos():0}catch{return 0}}
+let EMB=null;function embedded(){if(EMB===null){try{EMB=NATIVE&&window.Native.embeddedPhotos?window.Native.embeddedPhotos():0}catch{EMB=0}}return EMB}
 function offlineHtml(){
   const ph=[...areas.values()].reduce((s,a)=>s+a.dl,0),emb=embedded();
   return `<div><h3>Hors connexion</h3>

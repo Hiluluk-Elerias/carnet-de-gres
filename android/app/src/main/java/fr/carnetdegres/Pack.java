@@ -209,6 +209,31 @@ final class Pack {
         }
     }
 
+    /** Liste les photos intégrées dès le démarrage, en arrière-plan : la lecture de l'APK peut prendre plusieurs secondes. */
+    static void warmUp(Context c) {
+        Context app = c.getApplicationContext();
+        new Thread(() -> embedded(app), "photos-integrees").start();
+    }
+
+    /** Taille totale et nombre de fichiers, en un seul parcours. */
+    static long[] measure(File f) {
+        long[] r = new long[2];
+        java.util.ArrayDeque<File> todo = new java.util.ArrayDeque<>();
+        todo.push(f);
+        while (!todo.isEmpty()) {
+            File[] list = todo.pop().listFiles();
+            if (list == null) continue;
+            for (File x : list) {
+                if (x.isDirectory()) todo.push(x);
+                else {
+                    r[0] += x.length();
+                    r[1]++;
+                }
+            }
+        }
+        return r;
+    }
+
     static long sizeOf(File f) {
         if (f.isFile()) return f.length();
         long s = 0;

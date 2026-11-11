@@ -105,14 +105,16 @@ final class Bridge {
     public String storage() {
         File root = Pack.root(activity);
         long now = System.currentTimeMillis();
-        if (!measuring && now - usedAt > 20000) {
+        // Parcourir des dizaines de milliers de tuiles est lent : une mesure toutes les 2 minutes au plus
+        if (!measuring && now - usedAt > 120000) {
             measuring = true;
             new Thread(() -> {
-                usedBytes = Pack.sizeOf(root);
-                usedFiles = Pack.countFiles(root);
+                long[] m = Pack.measure(root);
+                usedBytes = m[0];
+                usedFiles = (int) m[1];
                 usedAt = System.currentTimeMillis();
                 measuring = false;
-            }).start();
+            }, "mesure-stockage").start();
         }
         try {
             JSONObject o = new JSONObject();

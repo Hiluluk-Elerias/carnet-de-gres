@@ -37,6 +37,7 @@ public class MainActivity extends Activity {
         getWindow().setStatusBarColor(0xFF16201B);
         getWindow().setNavigationBarColor(0xFF16201B);
 
+        Pack.warmUp(this);
         web = new WebView(this);
         setContentView(web);
         WebSettings s = web.getSettings();
