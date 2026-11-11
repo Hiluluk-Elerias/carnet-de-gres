@@ -246,6 +246,15 @@ function setRocks(list){
 function kv(mode,fn){return new Promise((ok,ko)=>{const o=indexedDB.open('carnet',1);o.onupgradeneeded=()=>o.result.createObjectStore('kv');
   o.onerror=()=>ko(o.error);o.onsuccess=()=>{const t=o.result.transaction('kv',mode),r=fn(t.objectStore('kv'));t.oncomplete=()=>ok(r&&r.result);t.onerror=()=>ko(t.error)}})}
 const rocksLoad=()=>{if(BUILTIN_ROCKS)setRocks(BUILTIN_ROCKS);return kv('readonly',st=>st.get('rochers')).then(v=>{if(v&&v.R)setRocks(v.R)}).catch(()=>{})};
+/* Liste exportée par l'application Boolder : {"ticks":[{"id":…}],"projects":[{"id":…}]}, mêmes identifiants que les blocs du carnet */
+function boolderImport(file){
+  file.text().then(t=>{const o=JSON.parse(t);if(!o||!Array.isArray(o.ticks)||!Array.isArray(o.projects))throw 0;
+    const day=new Date().toISOString().slice(0,10);let nd=0,nt=0,unk=0;
+    for(const x of o.ticks){const i=+(x&&x.id);if(!problems.has(i)){unk++;continue}if(!done[i]){done[i]=day;nd++}delete todo[i]}
+    for(const x of o.projects){const i=+(x&&x.id);if(!problems.has(i)){unk++;continue}if(!done[i]&&!todo[i]){todo[i]=1;nt++}}
+    save('done',done);save('todo',todo);applyFilters();refresh();
+    toast(`Boolder : ${nd} réussi${nd>1?'s':''} et ${nt} à faire ajoutés`+(unk?` (${unk} bloc${unk>1?'s':''} inconnu${unk>1?'s':''} ignoré${unk>1?'s':''})`:'')+'.')})
+  .catch(()=>toast('Ce fichier n\'est pas un export Boolder.'))}
 function rocksImport(file){
   file.text().then(t=>{const o=JSON.parse(t);if(o.type!=='carnet-de-gres-rochers'||!Array.isArray(o.R))throw 0;
     return kv('readwrite',st=>st.put(o,'rochers')).then(()=>{setRocks(o.R);toast(o.R.length+' formes de rochers importées.');refresh()})})
@@ -540,7 +549,9 @@ const viewCarnet=()=>({kind:'carnet',title:'Carnet',html(){
   ${ds.length?`<div><h3>Réussis</h3><div class="list">${ds.slice(0,200).map(i=>pItem(problems.get(i))).join('')}</div></div>`:''}
   <div><h3>Sauvegarde</h3><p class="small muted">Ton carnet reste sur ce téléphone. Copie ce texte pour le garder ailleurs, ou colle une sauvegarde pour la restaurer.</p>
   <textarea id="bk" aria-label="Sauvegarde du carnet">${esc(JSON.stringify({done,todo}))}</textarea>
-  <div class="actions" style="margin-top:8px"><button class="act" data-go="copy">Copier</button><button class="act" data-go="restore">Restaurer</button></div></div>`}});
+  <div class="actions" style="margin-top:8px"><button class="act" data-go="copy">Copier</button><button class="act" data-go="restore">Restaurer</button></div>
+  <p class="small muted" style="margin-top:12px">Depuis l'application Boolder : dans ta liste, touche Exporter, puis choisis ce fichier ici. Les blocs réussis et les projets s'ajoutent à ton carnet sans rien effacer.</p>
+  <label class="act" style="margin-top:8px">Importer depuis Boolder<input type="file" id="boolder-file" accept=".json,application/json" hidden></label></div>`}});
 const viewAbout=()=>({kind:'about',title:'Infos',after:()=>NATIVE&&pollNative(),html:()=>`
   <p>Carte des blocs de Fontainebleau pour un usage personnel, sans compte ni abonnement.</p>
   ${NATIVE?offlineHtml():''}
@@ -710,7 +721,8 @@ document.addEventListener('click',e=>{
   else if(a==='copy'){const t=$('#bk');Promise.resolve().then(()=>navigator.clipboard.writeText(t.value)).then(()=>toast('Sauvegarde copiée.')).catch(()=>{t.select();toast('Sélectionne le texte et copie-le.')})}
   else if(a==='restore'){try{const o=JSON.parse($('#bk').value);if(typeof o.done!=='object'||typeof o.todo!=='object')throw 0;done=o.done;todo=o.todo;save('done',done);save('todo',todo);applyFilters();refresh();toast('Carnet restauré.')}catch{toast('Ce texte n\'est pas une sauvegarde valide.')}}
 });
-document.addEventListener('change',e=>{if(e.target.id==='rk-file'&&e.target.files[0])rocksImport(e.target.files[0])});
+document.addEventListener('change',e=>{if(e.target.id==='rk-file'&&e.target.files[0])rocksImport(e.target.files[0]);
+  if(e.target.id==='boolder-file'&&e.target.files[0]){boolderImport(e.target.files[0]);e.target.value=''}});
 document.addEventListener('error',e=>{if(e.target.matches&&e.target.matches('.topo img'))e.target.closest('.topo').classList.add('off')},true);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){const z=document.querySelector('.topo.zoom');if(z)z.classList.remove('zoom');else if(!$('#results').hidden)$('#results').hidden=true;else closeAll()}});
 
