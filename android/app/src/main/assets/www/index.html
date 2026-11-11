@@ -507,7 +507,7 @@ function viewArea(id){
     const pops=[...problems.values()].filter(p=>p.area===id&&p.feat).sort((x,y)=>y.pop-x.pop).slice(0,8);
     return `${areaAlert(a)}
     <div class="row"><span class="chip">${a.count} blocs</span>${clusters.get(a.cl)?`<span class="chip">${esc(clusters.get(a.cl))}</span>`:''}${a.tags.map(t=>`<span class="chip">${TAG[t]||esc(t)}</span>`).join('')}</div>
-    ${PREVIEW?'':`<div><button class="act" style="width:100%" id="dl-btn" data-go="dl:${id}">Télécharger les photos du secteur (${Math.round(a.dl)} Mo)</button><p class="small muted" id="dl-state" style="margin-top:6px">Le plan du secteur est enregistré en même temps. Tu pourras l'utiliser sans connexion.</p></div>`}
+    ${PREVIEW||embedded()?'':`<div><button class="act" style="width:100%" id="dl-btn" data-go="dl:${id}">Télécharger les photos du secteur (${Math.round(a.dl)} Mo)</button><p class="small muted" id="dl-state" style="margin-top:6px">Le plan du secteur est enregistré en même temps. Tu pourras l'utiliser sans connexion.</p></div>`}
     ${a.desc?`<p>${esc(a.desc)}</p>`:''}
     <div><h3>Blocs par niveau</h3><div class="hist">${a.levels.map((n,i)=>`<div><b>${n||''}</b><i style="height:${n/max*62}%"></i><span>${i+1}</span></div>`).join('')}</div></div>
     ${a.access.length?`<div><h3>Accès</h3><div class="list">${a.access.sort((x,y)=>x.min-y.min).map(r=>`<a class="item" style="text-decoration:none;color:inherit" href="${dest(r.poi.lat,r.poi.lon)}" target="_blank" rel="noopener"><span class="t">${esc(r.poi.name)}</span><span class="muted small">${r.min} min ${r.tr==='b'?'à vélo':'à pied'}</span></a>`).join('')}</div></div>`:''}
@@ -611,12 +611,13 @@ function jobHtml(st){
   <div style="height:8px;border-radius:4px;background:var(--soft);overflow:hidden;margin-top:6px"><div style="height:100%;width:${pc}%;background:var(--accent)"></div></div>
   ${st.running?'<button class="act" style="width:100%;margin-top:8px" data-go="nat-stop">Arrêter</button>':st.failed?'<p class="small muted" style="margin-top:6px">Relance le même bouton pour réessayer les fichiers manquants.</p>':''}`;
 }
+function embedded(){try{return NATIVE&&window.Native.embeddedPhotos?window.Native.embeddedPhotos():0}catch{return 0}}
 function offlineHtml(){
-  const ph=[...areas.values()].reduce((s,a)=>s+a.dl,0);
+  const ph=[...areas.values()].reduce((s,a)=>s+a.dl,0),emb=embedded();
   return `<div><h3>Hors connexion</h3>
-  <p class="small">Les photos et le fond de carte sont enregistrés dans l'application. Une fois téléchargés, ils ne dépendent plus des serveurs de Boolder ni de l'IGN.</p>
+  <p class="small">${emb?`Les ${emb} photos des blocs sont déjà dans l'application. Seul le fond de carte IGN vient encore d'Internet : télécharge-le une fois pour t'en passer.`:`Les photos et le fond de carte sont enregistrés dans l'application. Une fois téléchargés, ils ne dépendent plus des serveurs de Boolder ni de l'IGN.`}</p>
   <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
-  <button class="act" data-go="nat-all">Tout télécharger : photos et plan (environ ${mo(ph*1e6+170e6)})</button>
+  <button class="act" data-go="nat-all">${emb?'Télécharger le plan IGN (environ 170 Mo)':`Tout télécharger : photos et plan (environ ${mo(ph*1e6+170e6)})`}</button>
   <button class="act" data-go="nat-ortho">Ajouter la photo aérienne (environ 300 Mo)</button></div>
   <div id="nat-job" style="margin-top:10px"></div>
   <p class="small muted" id="nat-sto" style="margin-top:8px"></p>
@@ -703,7 +704,7 @@ document.addEventListener('click',e=>{
   else if(a==='zoom'){e.stopPropagation();$('#topo').classList.toggle('zoom')}
   else if(a==='dl')download(n);
   else if(a==='rk-off')rocksRemove();
-  else if(a==='nat-all')nativeStart([...allPhotos(),...allTiles('plan')],'Toutes les photos et le plan');
+  else if(a==='nat-all')nativeStart(embedded()?allTiles('plan'):[...allPhotos(),...allTiles('plan')],embedded()?'Le plan IGN':'Toutes les photos et le plan');
   else if(a==='nat-ortho')nativeStart(allTiles('ortho'),'Photo aérienne');
   else if(a==='nat-stop'){window.Native.stop();toast('Téléchargement arrêté. Ce qui est enregistré est conservé.');setTimeout(pollNative,600)}
   else if(a==='copy'){const t=$('#bk');Promise.resolve().then(()=>navigator.clipboard.writeText(t.value)).then(()=>toast('Sauvegarde copiée.')).catch(()=>{t.select();toast('Sélectionne le texte et copie-le.')})}

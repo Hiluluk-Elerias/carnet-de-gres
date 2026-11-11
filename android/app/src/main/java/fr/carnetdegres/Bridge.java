@@ -29,6 +29,12 @@ final class Bridge {
     }
 
     /** tokens : tableau JSON de jetons ; renvoie le nombre déjà enregistrés. */
+    /** Nombre de photos intégrées à l'APK (0 pour la version publique). */
+    @JavascriptInterface
+    public int embeddedPhotos() {
+        return Pack.embedded(activity).size();
+    }
+
     @JavascriptInterface
     public int countExisting(String tokens) {
         try {
