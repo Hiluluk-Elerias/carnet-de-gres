@@ -220,15 +220,42 @@ function tileUrl(z,x,y,l=layer){
   const L=LAYERS[l];
   return `https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${L[0]}&STYLE=normal&TILEMATRIXSET=${L[2]}&FORMAT=${L[1]}&TILEMATRIX=${z}&TILEROW=${y}&TILECOL=${x}`;
 }
-const shapes=(D.B||[]).map(a=>{
+const decodeRing=a=>{
   const xs=[],ys=[];let la=a[0],lo=a[1];xs.push(mx(lo/1e6));ys.push(my(la/1e6));
   for(let i=2;i<a.length;i+=2){la+=a[i];lo+=a[i+1];xs.push(mx(lo/1e6));ys.push(my(la/1e6))}
-  return{xs,ys,x:xs[0],y:ys[0]};
-});
+  let x0=1,y0=1,x1=0,y1=0;for(let i=0;i<xs.length;i++){if(xs[i]<x0)x0=xs[i];if(xs[i]>x1)x1=xs[i];if(ys[i]<y0)y0=ys[i];if(ys[i]>y1)y1=ys[i]}
+  return{xs,ys,x:xs[0],y:ys[0],x0,y0,x1,y1};
+};
+const shapes=(D.B||[]).map(decodeRing);
+/* Formes réelles des rochers : fichier importé par l'utilisateur, gardé dans le téléphone */
+let rocks=[];
+const M1=1/(40075016*Math.cos(48.4*Math.PI/180));
+function setRocks(list){
+  rocks=(list||[]).map(decodeRing);
+  const C=30*M1,g=new Map(),key=(i,j)=>i+','+j;
+  for(const r of rocks)for(let i=Math.floor(r.x0/C);i<=Math.floor(r.x1/C);i++)for(let j=Math.floor(r.y0/C);j<=Math.floor(r.y1/C);j++){const k=key(i,j);if(!g.has(k))g.set(k,[]);g.get(k).push(r)}
+  const m=2*M1;
+  for(const s of shapes){
+    let cx=0,cy=0;for(let i=0;i<s.xs.length;i++){cx+=s.xs[i];cy+=s.ys[i]}cx/=s.xs.length;cy/=s.ys.length;
+    const l=g.get(key(Math.floor(cx/C),Math.floor(cy/C)))||[];
+    s.hide=l.some(r=>cx>r.x0-m&&cx<r.x1+m&&cy>r.y0-m&&cy<r.y1+m);
+  }
+  req();
+}
+function kv(mode,fn){return new Promise((ok,ko)=>{const o=indexedDB.open('carnet',1);o.onupgradeneeded=()=>o.result.createObjectStore('kv');
+  o.onerror=()=>ko(o.error);o.onsuccess=()=>{const t=o.result.transaction('kv',mode),r=fn(t.objectStore('kv'));t.oncomplete=()=>ok(r&&r.result);t.onerror=()=>ko(t.error)}})}
+const rocksLoad=()=>kv('readonly',st=>st.get('rochers')).then(v=>{if(v&&v.R)setRocks(v.R)}).catch(()=>{});
+function rocksImport(file){
+  file.text().then(t=>{const o=JSON.parse(t);if(o.type!=='carnet-de-gres-rochers'||!Array.isArray(o.R))throw 0;
+    return kv('readwrite',st=>st.put(o,'rochers')).then(()=>{setRocks(o.R);toast(o.R.length+' formes de rochers importées.');refresh()})})
+  .catch(()=>toast('Ce fichier ne contient pas de formes de rochers.'))
+}
+function rocksRemove(){kv('readwrite',st=>st.delete('rochers')).then(()=>{setRocks([]);toast('Formes des rochers retirées.');refresh()})}
 function drawShapes(sc,X,Y){
   const mpp=40075016*Math.cos(48.4*Math.PI/180)/sc,buf=Math.max(1.5,2.4/mpp),pad=80+buf;
   ctx.beginPath();
   for(const s of shapes){
+    if(s.hide)continue;
     const x=X(s.x),y=Y(s.y);if(x<-pad||y<-pad||x>W+pad||y>H+pad)continue;
     ctx.moveTo(x,y);for(let i=1;i<s.xs.length;i++)ctx.lineTo(X(s.xs[i]),Y(s.ys[i]));
     if(s.xs.length>2)ctx.closePath();
@@ -236,6 +263,14 @@ function drawShapes(sc,X,Y){
   ctx.lineJoin=ctx.lineCap='round';ctx.globalAlpha=.92;
   ctx.lineWidth=2*buf+2;ctx.strokeStyle='#7f7359';ctx.stroke();
   ctx.lineWidth=2*buf;ctx.strokeStyle='#cfc4aa';ctx.fillStyle='#cfc4aa';ctx.stroke();ctx.fill();
+  if(rocks.length){
+    ctx.beginPath();
+    for(const r of rocks){
+      if(X(r.x1)<0||X(r.x0)>W||Y(r.y1)<0||Y(r.y0)>H)continue;
+      ctx.moveTo(X(r.xs[0]),Y(r.ys[0]));for(let i=1;i<r.xs.length;i++)ctx.lineTo(X(r.xs[i]),Y(r.ys[i]));ctx.closePath();
+    }
+    ctx.lineJoin='round';ctx.fillStyle='#cfc4aa';ctx.fill();ctx.lineWidth=1.2;ctx.strokeStyle='#7f7359';ctx.stroke();
+  }
   ctx.globalAlpha=1;
 }
 function tile(z,x,y,load){
@@ -277,7 +312,7 @@ function draw(){
     ctx.strokeStyle=a.closed?'rgba(180,67,31,.7)':'rgba(28,106,78,.4)';ctx.lineWidth=1.2;
     roundRect(x-6,y-6,w+12,h+12,8);ctx.fill();ctx.stroke();
   }
-  if(z>=16)drawShapes(sc,X,Y);
+  if(z>=15.5)drawShapes(sc,X,Y);
   if(z>=13)for(const o of pois.values()){
     const x=X(o.x),y=Y(o.y);if(x<-20||y<-20||x>W+20||y>H+20)continue;
     ctx.fillStyle=o.type==='parking'?'#1f5fb4':'#3d4a43';roundRect(x-10,y-10,20,20,4);ctx.fill();
@@ -508,9 +543,12 @@ const viewCarnet=()=>({kind:'carnet',title:'Carnet',html(){
 const viewAbout=()=>({kind:'about',title:'Infos',after:()=>NATIVE&&pollNative(),html:()=>`
   <p>Carte des blocs de Fontainebleau pour un usage personnel, sans compte ni abonnement.</p>
   ${NATIVE?offlineHtml():''}
+  <div><h3>Formes des rochers</h3>${rocks.length?`<p class="small">${rocks.length} formes importées. Elles remplacent les contours estimés là où elles existent.</p>
+  <div class="actions" style="margin-top:8px"><label class="act" style="text-align:center">Remplacer<input type="file" id="rk-file" accept=".json,application/json" hidden></label><button class="act" data-go="rk-off">Retirer</button></div>`
+  :`<p class="small">Sans fichier, les formes beiges sont estimées à partir de la position des blocs : ce ne sont pas les contours réels. Importe un fichier de formes de rochers pour avoir les vrais contours.</p>
+  <label class="act" style="margin-top:8px">Importer un fichier<input type="file" id="rk-file" accept=".json,application/json" hidden></label>`}</div>
   <div${NATIVE?' hidden':''}><h3>Installer sur le téléphone</h3><p class="small">iPhone : dans Safari, Partager puis « Sur l'écran d'accueil ». Android : dans Chrome, menu puis « Installer l'application ».</p></div>
   <div><h3>Sources</h3><p class="small">Données © <a href="https://www.boolder.com" target="_blank" rel="noopener">Boolder</a>, licence <a href="https://creativecommons.org/licenses/by/4.0/deed.fr" target="_blank" rel="noopener">CC BY 4.0</a>, converties pour cette application. Base importée le 8 novembre 2026. Photos © Boolder. Fond de carte © IGN. Cette application n'est ni liée à Boolder, ni approuvée par Boolder.</p></div>
-  <div><h3>Forme des rochers</h3><p class="small">Les formes beiges sont estimées à partir de la position des blocs d'un même rocher : ce ne sont pas les contours réels.</p></div>
   <div><h3>Fermetures</h3><p class="small">Les fermetures viennent de la base importée et peuvent dater. Vérifie sur le <a href="https://www.onf.fr/vivre-la-foret/+/2d9a::foret-de-fontainebleau-carte-des-sentiers-et-routes-forestieres-accessibles.html" target="_blank" rel="noopener">site de l'ONF</a> avant de partir.</p></div>`});
 
 /* ---------- Recherche ---------- */
@@ -663,16 +701,19 @@ document.addEventListener('click',e=>{
   else if(a==='tp'){const v=stack[stack.length-1],l=topoList(problems.get(v.id));v.tIdx=(v.tIdx+n+l.length)%l.length;refresh()}
   else if(a==='zoom'){e.stopPropagation();$('#topo').classList.toggle('zoom')}
   else if(a==='dl')download(n);
+  else if(a==='rk-off')rocksRemove();
   else if(a==='nat-all')nativeStart([...allPhotos(),...allTiles('plan')],'Toutes les photos et le plan');
   else if(a==='nat-ortho')nativeStart(allTiles('ortho'),'Photo aérienne');
   else if(a==='nat-stop'){window.Native.stop();toast('Téléchargement arrêté. Ce qui est enregistré est conservé.');setTimeout(pollNative,600)}
   else if(a==='copy'){const t=$('#bk');Promise.resolve().then(()=>navigator.clipboard.writeText(t.value)).then(()=>toast('Sauvegarde copiée.')).catch(()=>{t.select();toast('Sélectionne le texte et copie-le.')})}
   else if(a==='restore'){try{const o=JSON.parse($('#bk').value);if(typeof o.done!=='object'||typeof o.todo!=='object')throw 0;done=o.done;todo=o.todo;save('done',done);save('todo',todo);applyFilters();refresh();toast('Carnet restauré.')}catch{toast('Ce texte n\'est pas une sauvegarde valide.')}}
 });
+document.addEventListener('change',e=>{if(e.target.id==='rk-file'&&e.target.files[0])rocksImport(e.target.files[0])});
 document.addEventListener('error',e=>{if(e.target.matches&&e.target.matches('.topo img'))e.target.closest('.topo').classList.add('off')},true);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){const z=document.querySelector('.topo.zoom');if(z)z.classList.remove('zoom');else if(!$('#results').hidden)$('#results').hidden=true;else closeAll()}});
 
 /* ---------- Démarrage ---------- */
+rocksLoad();
 if(PREVIEW){$('#preview').hidden=false;$('#btn-gps').hidden=true;$('#btn-layer').hidden=true;$('#cr-ign').hidden=true}
 function syncLabel(){$('#lb-grade').setAttribute('aria-pressed',labelMode==='grade');$('#lb-num').setAttribute('aria-pressed',labelMode==='num')}
 syncLabel();resize();applyFilters();

@@ -9,6 +9,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.webkit.GeolocationPermissions;
+import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -19,6 +20,8 @@ import android.webkit.WebViewClient;
 public class MainActivity extends Activity {
     private static final int REQ_GEO = 1;
     private static final int REQ_NOTIF = 2;
+    private static final int REQ_FILE = 3;
+    private ValueCallback<Uri[]> fileCallback;
     private WebView web;
     private GeolocationPermissions.Callback geoCallback;
     private String geoOrigin;
@@ -36,7 +39,7 @@ public class MainActivity extends Activity {
         s.setDomStorageEnabled(true);
         s.setGeolocationEnabled(true);
         s.setAllowFileAccess(false);
-        s.setAllowContentAccess(false);
+        s.setAllowContentAccess(true);
         s.setSupportMultipleWindows(false);
         web.addJavascriptInterface(new Bridge(this), "Native");
 
@@ -70,6 +73,22 @@ public class MainActivity extends Activity {
                             Manifest.permission.ACCESS_COARSE_LOCATION}, REQ_GEO);
                 }
             }
+
+            @Override
+            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (fileCallback != null) fileCallback.onReceiveValue(null);
+                fileCallback = callback;
+                Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+                i.addCategory(Intent.CATEGORY_OPENABLE);
+                i.setType("*/*");
+                try {
+                    startActivityForResult(Intent.createChooser(i, "Choisir un fichier"), REQ_FILE);
+                } catch (ActivityNotFoundException e) {
+                    fileCallback = null;
+                    return false;
+                }
+                return true;
+            }
         });
 
         if (state != null) web.restoreState(state);
@@ -94,6 +113,17 @@ public class MainActivity extends Activity {
             geoCallback.invoke(geoOrigin, hasGeo(), false);
             geoCallback = null;
         }
+    }
+
+    @Override
+    protected void onActivityResult(int code, int result, Intent data) {
+        if (code == REQ_FILE && fileCallback != null) {
+            Uri u = (result == RESULT_OK && data != null) ? data.getData() : null;
+            fileCallback.onReceiveValue(u != null ? new Uri[]{u} : null);
+            fileCallback = null;
+            return;
+        }
+        super.onActivityResult(code, result, data);
     }
 
     @Override
