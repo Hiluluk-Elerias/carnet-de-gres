@@ -475,10 +475,10 @@ const refresh=()=>{const v=stack[stack.length-1];if(v){const t=$('#body').scroll
 /* ---------- Vues ---------- */
 const areaAlert=a=>a.warn?`<div class="alert ${a.closed?'closed':'note'}">${esc(a.warn)}${a.closed?' <a href="https://www.onf.fr/vivre-la-foret/+/2d9a::foret-de-fontainebleau-carte-des-sentiers-et-routes-forestieres-accessibles.html" target="_blank" rel="noopener">Vérifier sur le site de l\'ONF</a>':''}</div>`:'';
 const icCheck='<svg class="i" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></svg>',icStar='<svg class="i" viewBox="0 0 24 24"><path d="m12 4 2.5 5.2 5.7.8-4.1 4 1 5.7-5.1-2.7-5.1 2.7 1-5.7-4.1-4 5.7-.8z"/></svg>';
-/* Type de réussite : v = à vue, f = flash, t = travaillé */
-const icBolt='<svg class="i" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>',icEye='<svg class="i" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',icRedo='<svg class="i" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg>';
-const HOW={v:['À vue',icEye],f:['Flash',icBolt],t:['Travaillé',icRedo]};
-const howIc=id=>how[id]==='f'?icBolt:how[id]==='v'?icEye:'';
+/* Type de réussite : v = à vue, f = flash, t = après travail */
+const icBolt='<svg class="i" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>',icEye='<svg class="i" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',icClock='<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+const HOW={v:['À vue',icEye],f:['Flash',icBolt],t:['Après travail',icClock]};
+const howIc=id=>how[id]&&HOW[how[id]]?HOW[how[id]][1]:'';
 /* Ordre des cotes : 6a < 6a+ < 6b … */
 const gKey=g=>{const m=/^(\d)([abc]?)(\+?)/i.exec(g||'');return m?+m[1]*10+(m[2]?'abc'.indexOf(m[2].toLowerCase())*2:0)+(m[3]?1:0):-1};
 function pyramid(ids){
@@ -486,7 +486,7 @@ function pyramid(ids){
   for(const i of ids){const p=problems.get(i),k=(p.grade||'?').toLowerCase();if(!g.has(k))g.set(k,[0,0]);const e=g.get(k);if(how[i]==='f'||how[i]==='v')e[0]++;else e[1]++}
   const rows=[...g].sort((a,b)=>gKey(b[0])-gKey(a[0])),max=Math.max(1,...rows.map(r=>r[1][0]+r[1][1]));
   return `<div class="pyr">${rows.map(([k,[f,w]])=>`<div><b>${gradeTxt(k)}</b><p>${f?`<i class="f" style="width:${f/max*100}%"></i>`:''}${w?`<i style="width:${w/max*100}%"></i>`:''}</p><span>${f+w}</span></div>`).join('')}</div>
-  <p class="small muted" style="margin-top:6px"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--accent)"></span> à vue ou flash &nbsp; <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--accent);opacity:.45"></span> travaillé ou non précisé</p>`;
+  <p class="small muted" style="margin-top:6px"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--accent)"></span> à vue ou flash &nbsp; <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--accent);opacity:.45"></span> après travail ou non précisé</p>`;
 }
 const maxGrade=ids=>{let b=null;for(const i of ids){const p=problems.get(i);if(!b||gKey(p.grade)>gKey(b.grade))b=p}return b?gradeTxt(b.grade):'–'};
 const pItem=(p,x)=>{const c=p.circ&&circuits.get(p.circ);return `<button class="item" data-go="p:${p.id}">${c?`<span class="dot" style="background:${COL[c.color][0]}"></span>`:''}<span class="t">${esc(p.name)}${howIc(p.id)} <span class="muted small">${esc(areas.get(p.area).name)}${x?' · '+esc(x):''}</span></span><span class="g">${gradeTxt(p.grade)}</span></button>`};
