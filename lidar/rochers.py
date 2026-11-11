@@ -104,15 +104,24 @@ def trouve_dalles():
 
 dalles = trouve_dalles()
 X, Y, Z, C = [], [], [], []
+import subprocess, time
 for u in dalles:
-    try:
-        with laspy.CopcReader.open(u) as r:
-            pts_ = r.query(bounds=laspy.copc.Bounds(mins=np.array([x0, y0]), maxs=np.array([x1, y1])))
-    except Exception as ex:
-        print('COPC', u, 'échec', ex)
+    loc = '/tmp/' + u.rsplit('/', 1)[1]
+    for essai in range(6):
+        r_ = subprocess.run(['curl', '-sS', '-f', '-L', '-A', 'CarnetDeGres/1.0', '-o', loc, u])
+        if r_.returncode == 0:
+            break
+        print('téléchargement échec, nouvel essai', essai + 1)
+        time.sleep(30 * (essai + 1))
+    if not os.path.exists(loc):
         continue
-    X.append(np.asarray(pts_.x)); Y.append(np.asarray(pts_.y)); Z.append(np.asarray(pts_.z)); C.append(np.asarray(pts_.classification))
-    print('COPC', u, len(pts_.x), 'points')
+    print('dalle', loc, round(os.path.getsize(loc) / 1e6), 'Mo')
+    with laspy.open(loc) as r:
+        for ch in r.chunk_iterator(5_000_000):
+            x_ = np.asarray(ch.x); y_ = np.asarray(ch.y)
+            k = (x_ >= x0) & (x_ < x1) & (y_ >= y0) & (y_ < y1)
+            if k.any():
+                X.append(x_[k]); Y.append(y_[k]); Z.append(np.asarray(ch.z)[k]); C.append(np.asarray(ch.classification)[k])
 pm = np.zeros(z.shape, bool)
 if X:
     X, Y, Z, C = map(np.concatenate, (X, Y, Z, C))
