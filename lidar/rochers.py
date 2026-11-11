@@ -103,7 +103,7 @@ def trouve_dalles():
     return sorted(urls)
 
 dalles = trouve_dalles()
-X, Y, Z, C = [], [], [], []
+X, Y, Z, C, RN, NR = [], [], [], [], [], []
 import subprocess, time
 for u in dalles:
     loc = '/tmp/' + u.rsplit('/', 1)[1]
@@ -121,29 +121,49 @@ for u in dalles:
             x_ = np.asarray(ch.x); y_ = np.asarray(ch.y)
             k = (x_ >= x0) & (x_ < x1) & (y_ >= y0) & (y_ < y1)
             if k.any():
-                X.append(x_[k]); Y.append(y_[k]); Z.append(np.asarray(ch.z)[k]); C.append(np.asarray(ch.classification)[k])
+                X.append(x_[k]); Y.append(y_[k]); Z.append(np.asarray(ch.z)[k]); C.append(np.asarray(ch.classification)[k]); RN.append(np.asarray(ch.return_number)[k]); NR.append(np.asarray(ch.number_of_returns)[k])
 pm = np.zeros(z.shape, bool)
 if X:
-    X, Y, Z, C = map(np.concatenate, (X, Y, Z, C))
+    X, Y, Z, C, RN, NR = map(np.concatenate, (X, Y, Z, C, RN, NR))
     col = ((X - x0) / RES).astype(int); row = ((y1 - Y) / RES).astype(int)
     ok = (col >= 0) & (col < W) & (row >= 0) & (row < H)
-    X, Y, Z, C, col, row = X[ok], Y[ok], Z[ok], C[ok], col[ok], row[ok]
+    X, Y, Z, C, RN, NR, col, row = X[ok], Y[ok], Z[ok], C[ok], RN[ok], NR[ok], col[ok], row[ok]
     hz = Z - z[row, col]
     print('points', len(Z), 'densité', round(len(Z) / ((x1 - x0) * (y1 - y0)), 1), 'pts/m²')
     for lo, hi in [(-1, .3), (.3, .8), (.8, 2), (2, 5), (5, 40)]:
         sel = (hz >= lo) & (hz < hi)
         u_, n_ = np.unique(C[sel], return_counts=True)
         print(f'  hauteur {lo}..{hi} m :', dict(zip(u_.tolist(), n_.tolist())))
-    cand = (hz > 0.7) & (hz < 7) & ~np.isin(C, [3, 4, 5])
-    cnt = np.zeros(z.shape, np.int32)
-    np.add.at(cnt, (row[cand], col[cand]), 1)
-    pm = cnt >= 2
-    pm = ndimage.binary_closing(pm, structure=disque(0.6))
-    pm = ndimage.binary_opening(pm, structure=disque(0.5))
-    pm = ndimage.binary_fill_holes(pm)
-    lab, nb = ndimage.label(pm)
-    t_ = ndimage.sum(pm, lab, range(1, nb + 1))
-    pm = np.isin(lab, 1 + np.nonzero(t_ * RES * RES >= 3)[0])
+    seul = NR == 1
+    der = RN == NR
+    for lo, hi in [(.8, 2), (2, 5), (5, 40)]:
+        sel = (hz >= lo) & (hz < hi)
+        print(f'  {lo}..{hi} m : {sel.sum()} points, dont écho unique {(sel & seul).sum()}, dernier écho {(sel & der).sum()}')
+    def grille(sel):
+        n_ = np.zeros(z.shape, np.int32); np.add.at(n_, (row[sel], col[sel]), 1)
+        top = np.full(z.shape, -99.0); np.maximum.at(top, (row[sel], col[sel]), hz[sel])
+        s1 = np.zeros(z.shape); np.add.at(s1, (row[sel], col[sel]), hz[sel])
+        s2 = np.zeros(z.shape); np.add.at(s2, (row[sel], col[sel]), hz[sel] ** 2)
+        with np.errstate(invalid='ignore', divide='ignore'):
+            sd = np.sqrt(np.maximum(s2 / n_ - (s1 / n_) ** 2, 0))
+        return n_, top, np.nan_to_num(sd, nan=9)
+    def nettoie(m):
+        m = ndimage.binary_closing(m, structure=disque(0.6))
+        m = ndimage.binary_opening(m, structure=disque(0.5))
+        m = ndimage.binary_fill_holes(m)
+        lab, nb = ndimage.label(m)
+        t_ = ndimage.sum(m, lab, range(1, nb + 1))
+        return np.isin(lab, 1 + np.nonzero(t_ * RES * RES >= 3)[0])
+    band = (hz > 0.7) & (hz < 6.5)
+    nA, topA, sdA = grille(band & seul)
+    pm = nettoie(nA >= 3)
+    nB, topB, sdB = grille(band & der)
+    # surface lisse : peu d'écart vertical dans la cellule et voisinage dense
+    dens = ndimage.uniform_filter(nB.astype(float), size=3)
+    pmB = nettoie((nB >= 2) & (sdB < 0.25) & (dens >= 2.5))
+    np.save(os.path.join(OUT, 'nA.npy'), nA.astype('int16'))
+else:
+    pmB = pm
 
 
 def polygones(m, h):
@@ -161,12 +181,12 @@ def polygones(m, h):
 
 resultats = {}
 mm, h = detecte(1.0, 10)
-for cle, m in [('MNT seul', mm), ('points seuls', pm), ('combiné', mm | pm)]:
+for cle, m in [('MNT seul', mm), ('écho unique', pm), ('dernier écho lisse', pmB), ('combiné', mm | pm | pmB)]:
     if cle != 'MNT seul':
         m = ndimage.binary_closing(m, structure=disque(0.5))
     polys = polygones(m, h)
     json.dump({'type': 'FeatureCollection', 'features': polys},
-              open(os.path.join(OUT, 'rochers_' + cle.replace(' ', '_').replace('é', 'e') + '.geojson'), 'w'))
+              open(os.path.join(OUT, 'rochers_' + cle.replace(' ', '_').replace('é', 'e').replace('è', 'e') + '.geojson'), 'w'))
     resultats[cle] = (m, h, polys)
     print(cle, len(polys), 'rochers')
 
@@ -180,7 +200,7 @@ px = [to93.transform(lon, lat) for lat, lon in pts]
 cols = [((x - x0) / RES) for x, y in px]
 rows = [((y1 - y) / RES) for x, y in px]
 ombre = LightSource(azdeg=315, altdeg=40).hillshade(z, vert_exag=2, dx=RES, dy=RES)
-fig, axes = plt.subplots(1, 3, figsize=(30, 30 * H / W / 3 + 1.2), dpi=110)
+fig, axes = plt.subplots(1, 4, figsize=(40, 40 * H / W / 4 + 1.2), dpi=90)
 for ax, (cle, (m, h, polys)) in zip(axes, resultats.items()):
     ax.imshow(ombre, cmap='gray')
     ax.contour(m, levels=[0.5], colors='#ffb000', linewidths=1.6)
@@ -195,7 +215,8 @@ plt.savefig(os.path.join(OUT, 'controle.png'))
 # Zoom sur la partie la plus dense
 c0, r0 = int(np.median(cols)), int(np.median(rows))
 win = 160
-fig, axes = plt.subplots(1, 3, figsize=(30, 10.5), dpi=110)
+fig, axes = plt.subplots(2, 2, figsize=(20, 20.5), dpi=100)
+axes = axes.ravel()
 for ax, (cle, (m, h, polys)) in zip(axes, resultats.items()):
     sl = (slice(max(0, r0 - win), r0 + win), slice(max(0, c0 - win), c0 + win))
     ax.imshow(ombre[sl], cmap='gray')
