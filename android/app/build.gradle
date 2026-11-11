@@ -1,0 +1,39 @@
+plugins {
+    id 'com.android.application'
+}
+
+def runNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
+
+android {
+    namespace 'fr.carnetdegres'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'fr.carnetdegres.app'
+        minSdk 24
+        targetSdk 34
+        versionCode runNumber
+        versionName "1.${runNumber}"
+    }
+
+    signingConfigs {
+        release {
+            storeFile file('carnet.jks')
+            storePassword 'carnetdegres'
+            keyAlias 'carnet'
+            keyPassword 'carnetdegres'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

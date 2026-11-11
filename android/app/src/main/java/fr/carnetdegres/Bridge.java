@@ -1,0 +1,119 @@
+package fr.carnetdegres;
+
+import android.content.Intent;
+import android.os.Build;
+import android.webkit.JavascriptInterface;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
+
+/** Fonctions appelées depuis la page sous le nom window.Native. */
+final class Bridge {
+    private final MainActivity activity;
+    private volatile long usedBytes = -1;
+    private volatile int usedFiles = 0;
+    private volatile long usedAt = 0;
+    private volatile boolean measuring = false;
+
+    Bridge(MainActivity a) {
+        activity = a;
+    }
+
+    @JavascriptInterface
+    public String version() {
+        return "1";
+    }
+
+    /** tokens : tableau JSON de jetons ; renvoie le nombre déjà enregistrés. */
+    @JavascriptInterface
+    public int countExisting(String tokens) {
+        try {
+            JSONArray a = new JSONArray(tokens);
+            int n = 0;
+            for (int i = 0; i < a.length(); i++) {
+                File f = Pack.fileForToken(activity, a.getString(i));
+                if (f != null && f.exists() && f.length() > 0) n++;
+            }
+            return n;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    @JavascriptInterface
+    public String download(String tokens, String label) {
+        try {
+            JSONArray a = new JSONArray(tokens);
+            List<String> list = new ArrayList<>(a.length());
+            for (int i = 0; i < a.length(); i++) {
+                String t = a.getString(i);
+                File f = Pack.fileForToken(activity, t);
+                if (f != null && !(f.exists() && f.length() > 0)) list.add(t);
+            }
+            if (list.isEmpty()) return "complet";
+            DownloadService.add(list, label);
+            activity.runOnUiThread(() -> {
+                activity.askNotifications();
+                Intent i = new Intent(activity, DownloadService.class);
+                if (Build.VERSION.SDK_INT >= 26) activity.startForegroundService(i);
+                else activity.startService(i);
+            });
+            return "ok";
+        } catch (Exception e) {
+            return "erreur";
+        }
+    }
+
+    @JavascriptInterface
+    public void stop() {
+        DownloadService.requestStop();
+    }
+
+    @JavascriptInterface
+    public String status() {
+        try {
+            JSONObject o = new JSONObject();
+            o.put("running", DownloadService.running);
+            o.put("label", DownloadService.label);
+            o.put("total", DownloadService.total.get());
+            o.put("done", DownloadService.done.get());
+            o.put("failed", DownloadService.failed.get());
+            o.put("bytes", DownloadService.bytes.get());
+            o.put("finishedAt", DownloadService.finishedAt);
+            return o.toString();
+        } catch (Exception e) {
+            return "{}";
+        }
+    }
+
+    /** Espace utilisé (mesuré en arrière-plan) et espace libre. */
+    @JavascriptInterface
+    public String storage() {
+        File root = Pack.root(activity);
+        long now = System.currentTimeMillis();
+        if (!measuring && now - usedAt > 20000) {
+            measuring = true;
+            new Thread(() -> {
+                usedBytes = Pack.sizeOf(root);
+                usedFiles = Pack.countFiles(root);
+                usedAt = System.currentTimeMillis();
+                measuring = false;
+            }).start();
+        }
+        try {
+            JSONObject o = new JSONObject();
+            File base = root.getParentFile() != null ? root.getParentFile() : root;
+            o.put("path", root.getAbsolutePath());
+            o.put("free", base.getUsableSpace());
+            o.put("used", usedBytes);
+            o.put("files", usedFiles);
+            return o.toString();
+        } catch (Exception e) {
+            return "{}";
+        }
+    }
+}
