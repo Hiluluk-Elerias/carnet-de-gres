@@ -96,8 +96,10 @@ final class Pack {
 
     private static String embeddedName(Context c, String t) {
         if (t == null || !t.startsWith("p/")) return null;
-        String n = t.substring(2) + ".jpg";
-        return embedded(c).contains(n) ? n : null;
+        String id = t.substring(2);
+        Set<String> e = embedded(c);
+        if (e.contains(id + ".avif")) return id + ".avif";
+        return e.contains(id + ".jpg") ? id + ".jpg" : null;
     }
 
     /** Vrai si le fichier est déjà disponible sans réseau (intégré à l'APK ou téléchargé). */
@@ -114,6 +116,8 @@ final class Pack {
         if (n.endsWith(".css")) return "text/css";
         if (n.endsWith(".json") || n.endsWith(".webmanifest")) return "application/json";
         if (n.endsWith(".png")) return "image/png";
+        if (n.endsWith(".avif")) return "image/avif";
+        if (n.endsWith(".webp")) return "image/webp";
         if (n.endsWith(".svg")) return "image/svg+xml";
         return "image/jpeg";
     }
@@ -152,7 +156,7 @@ final class Pack {
         String emb = embeddedName(c, token);
         if (emb != null) {
             try {
-                return ok("image/jpeg", c.getAssets().open("photos/" + emb));
+                return ok(mime(emb), c.getAssets().open("photos/" + emb));
             } catch (Exception ignored) {
             }
         }
