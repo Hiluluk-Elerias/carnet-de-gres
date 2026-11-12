@@ -1,0 +1,17 @@
+# Met à jour la version en ligne (GitHub Pages, branche gh-pages) à chaque modification de main
+name: Version en ligne
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Publier main sur gh-pages
+        run: git push origin HEAD:refs/heads/gh-pages --force
