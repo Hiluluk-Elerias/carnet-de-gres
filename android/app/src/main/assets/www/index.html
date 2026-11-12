@@ -97,6 +97,8 @@ textarea{width:100%;height:84px;border:1px solid var(--line);border-radius:8px;b
 .alert.ok{background:var(--soft);color:var(--accent);font-weight:700}
 .item .t svg.i{width:16px;height:16px;vertical-align:-3px;margin-left:3px;color:var(--amber)}
 textarea.note{height:96px;font-size:15px}
+input.field{width:100%;margin-top:8px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:15px}
+ol.steps{margin:6px 0 0;padding-left:20px;line-height:1.5}ol.steps li{margin-bottom:4px}
 .pyr{display:flex;flex-direction:column;gap:3px}
 .pyr div{display:grid;grid-template-columns:38px 1fr 34px;align-items:center;gap:6px;font-size:13px;font-variant-numeric:tabular-nums}
 .pyr div>b{text-align:right}.pyr div>span{text-align:left;color:var(--muted)}
@@ -193,9 +195,11 @@ const dest=(lat,lon)=>`https://www.google.com/maps/dir/?api=1&destination=${lat}
 /* ---------- Stockage local ---------- */
 const load=(k,d)=>{try{const v=localStorage.getItem('cg-'+k);return v?JSON.parse(v):d}catch{return d}};
 /* Dates des réussites : jour local (pas UTC), stocké AAAA-MM-JJ pour le tri, affiché JJ/MM/AAAA */
-const localDay=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+const localDay=(d=new Date())=>{return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
 const frDate=v=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));return m?m[3]+'/'+m[2]+'/'+m[1]:''};
-const save=(k,v)=>{try{localStorage.setItem('cg-'+k,JSON.stringify(v))}catch{}};
+const rawSave=(k,v)=>{try{localStorage.setItem('cg-'+k,JSON.stringify(v))}catch{}};
+/* Toute modification du carnet passe par save : la synchronisation y repère ce qui a changé */
+const save=(k,v)=>{rawSave(k,v);if(k==='done'||k==='todo'||k==='how'||k==='notes')carnetChanged(k,v)};
 let labelMode=load('label','grade');
 let how=load('how',{}),notes=load('notes',{}),lastBackup=load('lastbk','');
 let done=load('done',{}),todo=load('todo',{}),dlDone=load('dl',{}),layer=load('layer','plan');
@@ -587,6 +591,7 @@ const viewCarnet=()=>({kind:'carnet',title:'Carnet',html(){
   return `${restoreHtml()}${ds.length?`<div><h3>${ds.length} bloc${ds.length>1?'s':''} réussi${ds.length>1?'s':''} · max ${maxGrade(ds)}</h3><button class="act" style="width:100%" data-go="stats">Statistiques et pyramide des cotes</button></div>`:'<p class="muted">Touche un bloc sur la carte, puis « Marquer réussi » ou « À faire ». Tes blocs apparaîtront ici.</p>'}
   ${ts.length?`<div><h3>À faire</h3><div class="list">${ts.map(i=>pItem(problems.get(i))).join('')}</div></div>`:''}
   ${ds.length?`<div><h3>Réussis</h3><div class="list">${ds.slice(0,200).map(i=>pItem(problems.get(i),frDate(done[i]))).join('')}</div></div>`:''}
+  ${syncHtml()}
   <div><h3>Sauvegarde</h3><p class="small muted">Ton carnet (réussis, dates, types de réussite, notes, blocs à faire) n'existe que dans cette application : il est perdu si tu la désinstalles. Enregistre un fichier de temps en temps et garde-le ailleurs (Drive, PC…).</p>
   ${ds.length||ts.length||Object.keys(notes).length?`<p class="alert ${old===null||old>30?'note':'ok'}" style="margin-top:8px;font-weight:400">${old===null?'Aucune sauvegarde en fichier pour l\'instant.':old===0?'Dernière sauvegarde aujourd\'hui.':`Dernière sauvegarde le ${frDate(lastBackup)}${old>30?', il y a plus d\'un mois':''}.`}</p>`:''}
   <div class="actions" style="margin-top:8px"><button class="act" data-go="bk-save">Enregistrer un fichier</button><label class="act">Restaurer un fichier<input type="file" id="bk-file" accept=".json,application/json" hidden></label></div>
@@ -618,6 +623,103 @@ const viewAbout=()=>({kind:'about',title:'Infos',after:()=>NATIVE&&pollNative(),
   <div${NATIVE?' hidden':''}><h3>Installer sur le téléphone</h3><p class="small">iPhone : dans Safari, Partager puis « Sur l'écran d'accueil ». Android : dans Chrome, menu puis « Installer l'application ».</p></div>
   <div><h3>Sources</h3><p class="small">Données © <a href="https://www.boolder.com" target="_blank" rel="noopener">Boolder</a>, licence <a href="https://creativecommons.org/licenses/by/4.0/deed.fr" target="_blank" rel="noopener">CC BY 4.0</a>, converties pour cette application. Base importée le 8 novembre 2026. Photos © Boolder. Fond de carte © IGN. Météo : <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo.com</a> (CC BY 4.0). Cette application n'est ni liée à Boolder, ni approuvée par Boolder.</p></div>
   <div><h3>Fermetures</h3><p class="small">Les fermetures viennent de la base importée et peuvent dater. Vérifie sur le <a href="https://www.onf.fr/vivre-la-foret/+/2d9a::foret-de-fontainebleau-carte-des-sentiers-et-routes-forestieres-accessibles.html" target="_blank" rel="noopener">site de l'ONF</a> avant de partir.</p></div>`});
+
+/* ---------- Synchronisation par GitHub (gist secret du compte de chaque personne) ----------
+   Chaque modification est horodatée par bloc (mt["d:123"] = date de la dernière modification de « réussi » pour le bloc 123).
+   Pour fusionner deux carnets, la modification la plus récente l'emporte, bloc par bloc ; les suppressions sont donc gardées aussi. */
+const SYNC_P={done:'d',todo:'t',how:'h',notes:'n'},GH_API='https://api.github.com',GH_FILE='carnet-de-gres.json';
+var mt=load('mt',{}),snap=null,gh=load('gh',null),ghSetup=false,syncT=0;
+const syncSt={busy:false,again:false,last:load('ghlast',0),err:''};
+const curMaps=()=>({done,todo,how,notes});
+const clone=o=>JSON.parse(JSON.stringify(o));
+function snapNow(){snap=clone(curMaps())}
+function carnetChanged(k,v){
+  if(!snap)return;const o=snap[k]||{},p=SYNC_P[k],now=Date.now();let ch=false;
+  for(const id of new Set([...Object.keys(o),...Object.keys(v)]))if(JSON.stringify(o[id])!==JSON.stringify(v[id])){mt[p+':'+id]=now;ch=true}
+  snap[k]=clone(v);if(ch){rawSave('mt',mt);syncSoon()}
+}
+function mergeState(L,R){
+  const out={done:{},todo:{},how:{},notes:{},mt:{}},Lm=L.mt||{},Rm=R.mt||{};
+  for(const [k,p] of Object.entries(SYNC_P)){
+    const Lk=L[k]||{},Rk=R[k]||{},ids=new Set([...Object.keys(Lk),...Object.keys(Rk)]);
+    for(const key of [...Object.keys(Lm),...Object.keys(Rm)])if(key.startsWith(p+':'))ids.add(key.slice(2));
+    for(const id of ids){
+      const key=p+':'+id,tl=Lm[key]||0,tr=Rm[key]||0;
+      const src=tr>tl?Rk:tl>tr?Lk:(Lk[id]!==undefined?Lk:Rk),val=src[id];
+      if(val!==undefined&&val!==null)out[k][id]=val;
+      if(tl||tr)out.mt[key]=Math.max(tl,tr);
+    }
+  }
+  return out;
+}
+const sameState=(a,b)=>Object.keys(SYNC_P).every(k=>JSON.stringify(a[k]||{})===JSON.stringify(b[k]||{}))&&JSON.stringify(a.mt||{})===JSON.stringify(b.mt||{});
+async function ghApi(path,opt={}){
+  const r=await fetch(GH_API+path,{...opt,cache:'no-store',headers:{Accept:'application/vnd.github+json',Authorization:'Bearer '+gh.token,...(opt.body?{'Content-Type':'application/json'}:{})}});
+  if(r.status===401||r.status===403)throw new Error('auth');
+  if(!r.ok)throw new Error('http');
+  return r.json();
+}
+function syncSoon(ms=4000){if(!gh)return;clearTimeout(syncT);syncT=setTimeout(()=>syncNow(),ms)}
+async function syncNow(manual){
+  if(!gh)return;if(syncSt.busy){syncSt.again=true;return}
+  clearTimeout(syncT);syncSt.busy=true;syncSt.err='';syncUpd();
+  try{
+    let remote={done:{},todo:{},how:{},notes:{},mt:{}};
+    if(gh.id){
+      const g=await ghApi('/gists/'+gh.id),f=g.files&&g.files[GH_FILE];
+      if(f){let t=f.content;if(f.truncated)t=await (await fetch(f.raw_url,{cache:'no-store'})).text();try{const o=JSON.parse(t);if(o&&typeof o==='object')remote=o}catch{}}
+    }
+    const m=mergeState({...curMaps(),mt},remote);
+    const body=JSON.stringify({type:'carnet-de-gres-sync',version:3,updated:new Date().toISOString(),done:m.done,todo:m.todo,how:m.how,notes:m.notes,mt:m.mt});
+    if(!gh.id){
+      const g=await ghApi('/gists',{method:'POST',body:JSON.stringify({description:'Carnet de grès : synchronisation du carnet (ne pas modifier à la main)',public:false,files:{[GH_FILE]:{content:body}}})});
+      gh.id=g.id;rawSave('gh',gh);
+    }else if(!sameState(m,remote))await ghApi('/gists/'+gh.id,{method:'PATCH',body:JSON.stringify({files:{[GH_FILE]:{content:body}}})});
+    // Des modifications ont pu être faites pendant l'échange : elles sont plus récentes, elles l'emportent
+    const fin=mergeState({...curMaps(),mt},m),before=clone(curMaps());
+    if(!sameState(fin,m))syncSt.again=true;
+    done=fin.done;todo=fin.todo;how=fin.how;notes=fin.notes;mt=fin.mt;
+    for(const k in SYNC_P)rawSave(k,curMaps()[k]);rawSave('mt',mt);snapNow();
+    syncSt.last=Date.now();rawSave('ghlast',syncSt.last);
+    if(!sameState({...before,mt},{...curMaps(),mt})){applyFilters();if(!document.activeElement||document.activeElement.id!=='note')refresh()}
+    if(manual)toast('Carnet synchronisé.');
+  }catch(e){
+    syncSt.err=e.message==='auth'?'GitHub refuse la clé : elle a expiré ou a été supprimée. Déconnecte puis reconnecte avec une nouvelle clé.':'Synchronisation impossible pour le moment (pas de réseau ?). Nouvel essai plus tard.';
+    if(manual)toast(syncSt.err);
+  }finally{
+    syncSt.busy=false;syncUpd();
+    if(syncSt.again){syncSt.again=false;syncSoon(800)}
+  }
+}
+async function ghConnect(token){
+  gh={token:token.trim()};
+  try{
+    const u=await ghApi('/user');gh.login=u.login;
+    for(let page=1;page<=10&&!gh.id;page++){const l=await ghApi(`/gists?per_page=100&page=${page}`);const f=l.find(g=>g.files&&g.files[GH_FILE]);if(f)gh.id=f.id;if(l.length<100)break}
+    rawSave('gh',gh);ghSetup=false;refresh();await syncNow(true);
+  }catch(e){gh=null;toast(e.message==='auth'?'GitHub refuse cette clé : vérifie que tu l\'as copiée en entier et que la case « gist » était cochée.':'Connexion à GitHub impossible (pas de réseau ?).')}
+}
+function syncTxt(){
+  const t=syncSt.last?new Date(syncSt.last):null;
+  return `Connecté au compte GitHub <b>${esc(gh.login||'')}</b>.<br>`+(syncSt.busy?'Synchronisation…':syncSt.err?`<span style="color:var(--rust)">${esc(syncSt.err)}</span>`:t?`Dernière synchronisation le ${frDate(localDay(t))} à ${String(t.getHours()).padStart(2,'0')}h${String(t.getMinutes()).padStart(2,'0')}.`:'Pas encore synchronisé.');
+}
+function syncUpd(){const e=$('#sync-st');if(e&&gh)e.innerHTML=syncTxt()}
+function syncHtml(){
+  if(gh)return `<div><h3>Synchronisation</h3><p class="small" id="sync-st">${syncTxt()}</p><p class="small muted" style="margin-top:4px">Ton carnet se synchronise tout seul à l'ouverture et après chaque modification.</p>
+    <div class="actions" style="margin-top:8px"><button class="act" data-go="sync-now">Synchroniser</button><button class="act" data-go="sync-off">Déconnecter</button></div></div>`;
+  if(!ghSetup)return `<div><h3>Synchronisation</h3><p class="small muted">Facultatif : retrouve ton carnet sur tous tes appareils (autre téléphone, ordinateur) grâce à un compte GitHub gratuit.</p>
+    <button class="act" style="width:100%;margin-top:8px" data-go="sync-setup">Activer la synchronisation</button></div>`;
+  return `<div><h3>Activer la synchronisation</h3><ol class="steps small">
+    <li>Connecte-toi à GitHub, ou crée un compte gratuit (possible avec ton compte Google).</li>
+    <li>Ouvre la page de création de clé avec le bouton ci-dessous. La case <b>gist</b> est déjà cochée. Dans <b>Expiration</b>, choisis <b>No expiration</b>, puis touche <b>Generate token</b> tout en bas.</li>
+    <li>Copie la clé affichée (elle commence par <b>ghp_</b>) et colle-la ici.</li></ol>
+    <a class="act" style="margin-top:8px;width:100%" href="https://github.com/settings/tokens/new?scopes=gist&amp;description=Carnet%20de%20gr%C3%A8s" target="_blank" rel="noopener">Créer la clé sur GitHub</a>
+    <input class="field" id="gh-token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Colle ta clé ici (ghp_…)" aria-label="Clé GitHub">
+    <div class="actions" style="margin-top:8px"><button class="act" data-go="sync-connect" style="background:var(--accent);color:var(--on-accent)">Connecter</button><button class="act" data-go="sync-cancel">Annuler</button></div>
+    <p class="small muted" style="margin-top:8px">La clé reste sur cet appareil et ne donne accès qu'à tes gists. Le carnet est enregistré dans un gist secret de ton compte. Ce qui est déjà dans ton carnet est fusionné avec ce qui est en ligne, rien n'est effacé. Chaque personne utilise son propre compte.</p></div>`;
+}
+snapNow();
+document.addEventListener('visibilitychange',()=>{if(!gh)return;if(document.visibilityState==='visible')syncSoon(600);else if(syncT)syncNow()});
 
 /* ---------- Sauvegarde en fichier ---------- */
 const backupObj=()=>({type:'carnet-de-gres-sauvegarde',version:2,date:localDay(),done,todo,how,notes});
@@ -829,6 +931,11 @@ document.addEventListener('click',e=>{
   else if(a==='stats')open(viewStats());
   else if(a==='st')open(viewStats(n));
   else if(a==='bk-save')backupSave();
+  else if(a==='sync-setup'){ghSetup=true;refresh()}
+  else if(a==='sync-cancel'){ghSetup=false;refresh()}
+  else if(a==='sync-connect'){const t=$('#gh-token').value.trim();if(!t)toast('Colle d\'abord ta clé GitHub.');else{toast('Connexion à GitHub…');ghConnect(t)}}
+  else if(a==='sync-now')syncNow(true);
+  else if(a==='sync-off'){gh=null;try{localStorage.removeItem('cg-gh')}catch{}clearTimeout(syncT);refresh();toast('Synchronisation désactivée. Ton carnet reste sur cet appareil.')}
   else if(a==='bk-yes'){const b=pendingRestore;pendingRestore=null;if(b)applyRestore(b)}
   else if(a==='bk-no'){pendingRestore=null;refresh()}
   else if(a==='todo'){if(todo[n])delete todo[n];else todo[n]=1;save('todo',todo);applyFilters();refresh()}
@@ -859,6 +966,7 @@ rocksLoad();
 if(PREVIEW){$('#preview').hidden=false;$('#btn-gps').hidden=true;$('#btn-layer').hidden=true;$('#cr-ign').hidden=true}
 function syncLabel(){$('#lb-grade').setAttribute('aria-pressed',labelMode==='grade');$('#lb-num').setAttribute('aria-pressed',labelMode==='num')}
 syncLabel();resize();applyFilters();
+if(gh)syncSoon(1500);
 if(!PREVIEW&&!NATIVE&&'serviceWorker' in navigator&&isSecureContext){
   const had=!!navigator.serviceWorker.controller;
   navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)location.reload()});
